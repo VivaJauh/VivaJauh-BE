@@ -10,22 +10,37 @@ const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: databaseUrl }),
 });
 
+const cooperatives = [
+  { name: 'Padiwangi', focusArea: 'Simpan pinjam & beras' },
+  { name: 'Melati Jaya', focusArea: 'Sayuran & cold storage' },
+  { name: 'Sumber Makmur', focusArea: 'Pupuk & toko gerai' },
+  { name: 'Tirta Bersama', focusArea: 'Air bersih & simpan pinjam' },
+  { name: 'Harapan Baru', focusArea: 'Ternak & pakan' },
+];
+
 const users = [
   {
-    name: 'Local Field Officer',
+    name: 'Petugas Harapan Baru',
     email: 'field.officer@example.com',
     username: 'field_officer',
     role: 'field_officer' as UserRole,
+    koperasiName: 'Harapan Baru' as string | null,
   },
   {
-    name: 'Local Remote Admin',
+    name: 'Pengurus Harapan Baru',
+    email: 'pengurus.harapanbaru@example.com',
+    username: 'pengurus_harapanbaru',
+    role: 'remote_admin' as UserRole,
+    koperasiName: 'Harapan Baru' as string | null,
+  },
+  {
+    name: 'Admin Koperasi Sekunder',
     email: 'remote.admin@example.com',
     username: 'remote_admin',
     role: 'remote_admin' as UserRole,
+    koperasiName: null as string | null,
   },
 ];
-
-const cooperatives = ['Padiwangi', 'Melati Jaya', 'Sumber Makmur', 'Tirta Bersama', 'Harapan Baru'];
 
 const loanHistories = [
   {
@@ -115,6 +130,7 @@ async function main() {
         username: user.username,
         name: user.name,
         role: user.role,
+        koperasiName: user.koperasiName,
         status: 'active',
       },
       create: {
@@ -123,16 +139,23 @@ async function main() {
         password: hashPassword('password123'),
         name: user.name,
         role: user.role,
+        koperasiName: user.koperasiName,
         status: 'active',
       },
     });
   }
 
-  for (const koperasiName of cooperatives) {
-    const existing = await prisma.msTenant.findFirst({ where: { koperasiName } });
-    if (!existing) {
-      await prisma.msTenant.create({ data: { userId: seedUser.id, koperasiName } });
-    }
+  for (const koperasi of cooperatives) {
+    await prisma.msTenant.upsert({
+      where: { koperasiName: koperasi.name },
+      update: { focusArea: koperasi.focusArea, koperasiType: 'primer' },
+      create: {
+        userId: seedUser.id,
+        koperasiName: koperasi.name,
+        koperasiType: 'primer',
+        focusArea: koperasi.focusArea,
+      },
+    });
   }
 
   for (const history of loanHistories) {
@@ -157,7 +180,7 @@ async function main() {
   }
 
   console.log('Seeded local users. Password: password123');
-  console.log('Seeded cooperatives:', cooperatives.join(', '));
+  console.log('Seeded cooperatives:', cooperatives.map((c) => c.name).join(', '));
   console.log('Seeded cross-cooperative loan histories for Pak Acep and Pak Hendra.');
 }
 
