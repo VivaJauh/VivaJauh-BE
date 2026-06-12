@@ -33,6 +33,12 @@ function monthsAgo(months: number) {
   return date;
 }
 
+function daysAgo(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return date;
+}
+
 async function upsertUser(input: {
   name: string;
   email: string;
@@ -117,13 +123,35 @@ async function main() {
   const harapanBaruTenantId = tenants.get('Harapan Baru');
   if (!harapanBaruTenantId) throw new Error('Harapan Baru tenant was not seeded');
 
-  await upsertUser({
+  const hendra = await upsertUser({
     name: 'Pak Hendra',
     email: 'pak.hendra@example.com',
     username: 'pak_hendra',
     role: 'member',
     tenantId: harapanBaruTenantId,
   });
+
+  const memberUsers = [
+    { name: 'Bu Sari', email: 'bu.sari@example.com', username: 'bu_sari', koperasi: 'Harapan Baru' },
+    { name: 'Pak Joko', email: 'pak.joko@example.com', username: 'pak_joko', koperasi: 'Harapan Baru' },
+    { name: 'Pak Acep', email: 'pak.acep@example.com', username: 'pak_acep', koperasi: 'Padiwangi' },
+    { name: 'Bu Rina', email: 'bu.rina@example.com', username: 'bu_rina', koperasi: 'Tirta Bersama' },
+  ];
+
+  const memberByUsername = new Map<string, { id: string; name: string }>();
+  memberByUsername.set('pak_hendra', hendra);
+  for (const member of memberUsers) {
+    const tenantId = tenants.get(member.koperasi);
+    if (!tenantId) continue;
+    const user = await upsertUser({
+      name: member.name,
+      email: member.email,
+      username: member.username,
+      role: 'member',
+      tenantId,
+    });
+    memberByUsername.set(member.username, user);
+  }
 
   await upsertUser({
     name: 'Primary Admin Harapan Baru',
@@ -239,12 +267,118 @@ async function main() {
     }
   }
 
+  const activities: {
+    username: string;
+    recordType: string;
+    payload: Record<string, unknown>;
+    days: number;
+  }[] = [
+    { username: 'pak_hendra', recordType: 'savings_transaction', days: 40, payload: { primary: 'Pak Hendra', member_id: 'Hendra-001', savings_direction: 'setor', quantity: 500000 } },
+    { username: 'pak_hendra', recordType: 'savings_transaction', days: 12, payload: { primary: 'Pak Hendra', member_id: 'Hendra-001', savings_direction: 'setor', quantity: 250000 } },
+    { username: 'pak_hendra', recordType: 'loan_repayment', days: 20, payload: { primary: 'Pak Hendra', member_id: 'Hendra-001', loan_ref: 'PDW-Hendra-001', quantity: 350000 } },
+    { username: 'pak_hendra', recordType: 'feed_transaction', days: 9, payload: { primary: 'Konsentrat', direction: 'masuk', quantity: 120, warehouse: 'Gudang Utama' } },
+    { username: 'bu_sari', recordType: 'savings_transaction', days: 30, payload: { primary: 'Bu Sari', member_id: 'Sari-001', savings_direction: 'setor', quantity: 300000 } },
+    { username: 'bu_sari', recordType: 'feed_transaction', days: 7, payload: { primary: 'Dedak', direction: 'masuk', quantity: 80, warehouse: 'Gudang Utama' } },
+    { username: 'bu_sari', recordType: 'livestock_event', days: 15, payload: { primary: 'Kambing', event_type: 'penambahan', quantity: 4, pen: 'Kandang B' } },
+    { username: 'pak_joko', recordType: 'savings_transaction', days: 25, payload: { primary: 'Pak Joko', member_id: 'Joko-001', savings_direction: 'setor', quantity: 450000 } },
+    { username: 'pak_joko', recordType: 'savings_transaction', days: 5, payload: { primary: 'Pak Joko', member_id: 'Joko-001', savings_direction: 'tarik', quantity: 100000 } },
+    { username: 'pak_joko', recordType: 'livestock_event', days: 11, payload: { primary: 'Sapi', event_type: 'penambahan', quantity: 2, pen: 'Kandang A' } },
+    { username: 'pak_acep', recordType: 'savings_transaction', days: 35, payload: { primary: 'Pak Acep', member_id: 'Acep-001', savings_direction: 'setor', quantity: 600000 } },
+    { username: 'pak_acep', recordType: 'loan_repayment', days: 18, payload: { primary: 'Pak Acep', member_id: 'Acep-001', loan_ref: 'PDW-Acep-001', quantity: 400000 } },
+    { username: 'bu_rina', recordType: 'savings_transaction', days: 22, payload: { primary: 'Bu Rina', member_id: 'Rina-001', savings_direction: 'setor', quantity: 200000 } },
+    { username: 'bu_rina', recordType: 'savings_transaction', days: 6, payload: { primary: 'Bu Rina', member_id: 'Rina-001', savings_direction: 'tarik', quantity: 50000 } },
+  ];
+
+  for (const [index, activity] of activities.entries()) {
+    const owner = memberByUsername.get(activity.username);
+    if (!owner) continue;
+
+    const idempotencyKey = `seed-activity-${activity.username}-${index}`;
+    const existing = await prisma.trSyncRecord.findUnique({ where: { idempotencyKey } });
+    if (existing) continue;
+
+    const recordedAt = daysAgo(activity.days);
+    const payload = {
+      ...activity.payload,
+      note: '',
+      officer: owner.name,
+      schema_version: 2,
+    };
+
+    const record = await prisma.trSyncRecord.create({
+      data: {
+        localId: idempotencyKey,
+        userId: owner.id,
+        deviceId: seedDevice.id,
+        recordType: activity.recordType,
+        payloadJson: payload,
+        syncStatus: 'synced',
+        verificationStatus: 'verified',
+        idempotencyKey,
+        recordedAt,
+        uploadedAt: new Date(),
+      },
+    });
+
+    const base = { recordId: record.id, userId: owner.id, recordedAt };
+    const quantity = Number(activity.payload.quantity ?? 0);
+    const primary = String(activity.payload.primary ?? '-');
+
+    switch (activity.recordType) {
+      case 'feed_transaction':
+        await prisma.trFeedTransaction.create({
+          data: {
+            ...base,
+            feedType: primary,
+            direction: String(activity.payload.direction ?? 'masuk'),
+            quantityKg: quantity,
+            warehouse: String(activity.payload.warehouse ?? ''),
+          },
+        });
+        break;
+      case 'livestock_event':
+        await prisma.trLivestockEvent.create({
+          data: {
+            ...base,
+            livestockType: primary,
+            eventType: String(activity.payload.event_type ?? 'penambahan'),
+            quantity,
+            pen: String(activity.payload.pen ?? ''),
+          },
+        });
+        break;
+      case 'savings_transaction':
+        await prisma.trSavingsTransaction.create({
+          data: {
+            ...base,
+            memberName: primary,
+            memberId: String(activity.payload.member_id ?? ''),
+            direction: String(activity.payload.savings_direction ?? 'setor'),
+            amount: quantity,
+          },
+        });
+        break;
+      case 'loan_repayment':
+        await prisma.trLoanRepayment.create({
+          data: {
+            ...base,
+            memberName: primary,
+            memberId: String(activity.payload.member_id ?? ''),
+            loanRef: String(activity.payload.loan_ref ?? ''),
+            amount: quantity,
+          },
+        });
+        break;
+    }
+  }
+
   console.log('Seeded demo users. Password: password123');
   console.log('  member: pak_hendra / pak.hendra@example.com');
   console.log('  primary_admin: primary_harapanbaru / primary.harapanbaru@example.com');
   console.log('  secondary_admin: secondary_admin / secondary.admin@example.com');
   console.log('Seeded primary cooperatives:', primaryCooperatives.map((c) => c.name).join(', '));
-  console.log('Seeded Pak Hendra histories: one good, one minor arrears within 12 months, one old ignored record.');
+  console.log('Seeded members: bu_sari, pak_joko (Harapan Baru), pak_acep (Padiwangi), bu_rina (Tirta Bersama).');
+  console.log('Seeded member activity records for tenant summaries.');
 }
 
 main()
