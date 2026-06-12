@@ -41,15 +41,16 @@ enum LoanRiskLevel {
 }
 
 model MsUser {
-  id        String   @id @default(uuid())
-  username  String   @unique
-  password  String
-  name      String
-  email     String   @unique
-  role      UserRole @default(field_officer)
-  status    String   @default("active")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(uuid())
+  username     String   @unique
+  password     String
+  name         String
+  email        String   @unique
+  role         UserRole @default(field_officer)
+  koperasiName String?
+  status       String   @default("active")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   devices             MsDevice[]
   tenants             MsTenant[]
@@ -65,7 +66,9 @@ model MsUser {
 model MsTenant {
   id           String   @id @default(uuid())
   userId       String
-  koperasiName String
+  koperasiName String   @unique
+  koperasiType String   @default("primer")
+  focusArea    String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
