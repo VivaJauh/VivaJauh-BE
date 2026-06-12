@@ -27,7 +27,7 @@ export type LoanRepository = {
   createLoanApplication(input: CreateLoanApplicationRepositoryInput): Promise<LoanApplication>;
   findLoanApplicationById(id: string): Promise<LoanApplication | null>;
   findLoanApplications(status?: LoanStatus): Promise<LoanApplication[]>;
-  findBorrowerHistories(applicantName: string, applicantMemberId: string | null): Promise<LoanHistory[]>;
+  findBorrowerHistories(applicantName: string, applicantMemberId: string | null, since: Date): Promise<LoanHistory[]>;
   saveLoanRecommendation(input: SaveLoanRecommendationInput): Promise<LoanRecommendation>;
   updateLoanDecision(input: { id: string; status: 'approved' | 'rejected'; reviewedBy: string; reviewNote: string | null; reviewedAt: Date }): Promise<LoanApplication | null>;
   createLoanAuditLog(input: { userId: string; action: string; targetId: string; resultStatus: string; metadataJson: InputJsonValue }): Promise<void>;

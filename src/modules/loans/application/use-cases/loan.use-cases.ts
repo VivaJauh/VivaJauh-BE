@@ -14,8 +14,15 @@ import type {
 } from '../dto/loan.dto';
 
 const FAST_DECISION_THRESHOLD_MS = 30 * 60 * 1000;
+const RECAP_PERIOD_MONTHS = 12;
 
-function computeKeyStats(histories: LoanHistory[], requestedAmount: number): LoanKeyStats {
+function getRecapStartDate(now = new Date()) {
+  const start = new Date(now);
+  start.setMonth(start.getMonth() - RECAP_PERIOD_MONTHS);
+  return start;
+}
+
+function computeKeyStats(histories: LoanHistory[], requestedAmount: number, recapStart: Date, recapEnd: Date): LoanKeyStats {
   const goodHistoryCount = histories.filter((h) => h.outstandingArrears === 0 && h.latePayments === 0).length;
   const arrearsCount = histories.filter((h) => h.outstandingArrears > 0).length;
   const totalRepaid = histories.reduce((s, h) => s + h.totalRepaid, 0);
@@ -24,6 +31,9 @@ function computeKeyStats(histories: LoanHistory[], requestedAmount: number): Loa
   const ratio = requestedAmount > 0 ? Math.round((totalArrears / requestedAmount) * 10000) / 10000 : 0;
 
   return {
+    recap_period_months: RECAP_PERIOD_MONTHS,
+    recap_start_date: recapStart.toISOString(),
+    recap_end_date: recapEnd.toISOString(),
     known_cooperatives: histories.length,
     good_history_count: goodHistoryCount,
     arrears_cooperative_count: arrearsCount,
@@ -61,6 +71,7 @@ function computeEvidence(histories: LoanHistory[]): LoanEvidence[] {
     total_repaid: h.totalRepaid,
     late_payments: h.latePayments,
     outstanding_arrears: h.outstandingArrears,
+    recorded_at: h.recordedAt.toISOString(),
   }));
 }
 
@@ -72,7 +83,7 @@ function ruleBasedRecommendation(
       riskLevel: 'medium',
       recommendation: 'manual_review',
       summary:
-        'Tidak ditemukan riwayat pinjaman lintas koperasi untuk pemohon ini. Tidak adanya riwayat bukan berarti bebas risiko — verifikasi identitas dan penilaian manual oleh admin diperlukan sebelum keputusan dibuat.',
+        'Tidak ditemukan riwayat pinjaman lintas koperasi dalam 12 bulan terakhir untuk pemohon ini. Tidak adanya riwayat bukan berarti bebas risiko - verifikasi identitas dan penilaian manual oleh secondary admin diperlukan sebelum keputusan dibuat.',
     };
   }
 
@@ -80,7 +91,7 @@ function ruleBasedRecommendation(
     return {
       riskLevel: 'low',
       recommendation: 'approve',
-      summary: `Pemohon memiliki riwayat pembayaran bersih di ${stats.known_cooperatives} koperasi. Tidak ada tunggakan atau keterlambatan pembayaran yang terdeteksi. Direkomendasikan untuk disetujui.`,
+      summary: `Pemohon memiliki riwayat pembayaran bersih di ${stats.known_cooperatives} koperasi dalam 12 bulan terakhir. Tidak ada tunggakan atau keterlambatan pembayaran yang terdeteksi. Direkomendasikan untuk disetujui.`,
     };
   }
 
@@ -88,14 +99,14 @@ function ruleBasedRecommendation(
     return {
       riskLevel: 'medium',
       recommendation: 'manual_review',
-      summary: `Pemohon memiliki profil pembayaran campuran: ${stats.good_history_count} koperasi dengan riwayat baik, tetapi ${stats.arrears_cooperative_count} koperasi masih memiliki tunggakan yang belum diselesaikan. Admin perlu melakukan peninjauan sebelum menyetujui.`,
+      summary: `Pemohon memiliki profil pembayaran campuran dalam 12 bulan terakhir: ${stats.good_history_count} koperasi dengan riwayat baik, tetapi ${stats.arrears_cooperative_count} koperasi masih memiliki tunggakan yang belum diselesaikan. Secondary admin perlu melakukan peninjauan sebelum menyetujui.`,
     };
   }
 
   return {
     riskLevel: 'high',
     recommendation: 'reject_or_require_clearance',
-    summary: `Pemohon memiliki tunggakan belum selesai yang signifikan (${stats.total_unresolved_arrears}) dan/atau beberapa keterlambatan pembayaran. Pelunasan atau klarifikasi diperlukan sebelum pinjaman dapat disetujui.`,
+    summary: `Pemohon memiliki tunggakan belum selesai yang signifikan (${stats.total_unresolved_arrears}) dan/atau beberapa keterlambatan pembayaran dalam 12 bulan terakhir. Pelunasan atau klarifikasi diperlukan sebelum pinjaman dapat disetujui.`,
   };
 }
 
@@ -143,12 +154,15 @@ export function createLoanUseCases(repository: LoanRepository, gemini: GeminiLoa
       const app = await repository.findLoanApplicationById(id);
       if (!app) return null;
 
+      const recapEnd = new Date();
+      const recapStart = getRecapStartDate(recapEnd);
       const histories: LoanHistory[] = await repository.findBorrowerHistories(
         app.applicantName,
         app.applicantMemberId,
+        recapStart,
       );
 
-      const keyStats = computeKeyStats(histories, app.requestedAmount);
+      const keyStats = computeKeyStats(histories, app.requestedAmount, recapStart, recapEnd);
       const chartData = computeChartData(histories);
       const evidence = computeEvidence(histories);
 
@@ -212,6 +226,9 @@ export function createLoanUseCases(repository: LoanRepository, gemini: GeminiLoa
           risk_level: riskLevel,
           recommendation,
           model_provider: modelProvider,
+          recap_period_months: RECAP_PERIOD_MONTHS,
+          recap_start_date: recapStart.toISOString(),
+          recap_end_date: recapEnd.toISOString(),
         },
       });
 
@@ -230,15 +247,11 @@ export function createLoanUseCases(repository: LoanRepository, gemini: GeminiLoa
       id: string,
       reviewedBy: string,
       reviewNote: string | null,
-      reviewerKoperasi: string | null,
     ) {
       const existing = await repository.findLoanApplicationById(id);
       if (!existing) return null;
       if (existing.status !== 'pending_review') {
         throw new Error(`INVALID_STATE: application has already been ${existing.status}`);
-      }
-      if (reviewerKoperasi !== existing.targetKoperasi) {
-        throw new Error(`FORBIDDEN_SCOPE: only pengurus of ${existing.targetKoperasi} can decide this application`);
       }
 
       const app = await repository.updateLoanDecision({
@@ -324,15 +337,11 @@ export function createLoanUseCases(repository: LoanRepository, gemini: GeminiLoa
       id: string,
       reviewedBy: string,
       reviewNote: string | null,
-      reviewerKoperasi: string | null,
     ) {
       const existing = await repository.findLoanApplicationById(id);
       if (!existing) return null;
       if (existing.status !== 'pending_review') {
         throw new Error(`INVALID_STATE: application has already been ${existing.status}`);
-      }
-      if (reviewerKoperasi !== existing.targetKoperasi) {
-        throw new Error(`FORBIDDEN_SCOPE: only pengurus of ${existing.targetKoperasi} can decide this application`);
       }
 
       const app = await repository.updateLoanDecision({

@@ -67,7 +67,7 @@ function toApiApplication(
 }
 
 function isAdmin(req: Request): boolean {
-  return req.user?.role === 'remote_admin';
+  return req.user?.role === 'secondary_admin';
 }
 
 export function createLoanControllers(loanUseCases: LoanUseCases) {
@@ -133,7 +133,7 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
 
     async approveApplicationController(req: Request, res: Response, next: NextFunction) {
       try {
-        if (req.user?.role !== 'remote_admin') {
+        if (req.user?.role !== 'secondary_admin') {
           fail(res, 'Forbidden', 403, 'FORBIDDEN');
           return;
         }
@@ -143,7 +143,6 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
           id,
           req.user.sub,
           reviewNote,
-          req.user.koperasi_name ?? null,
         );
         if (!app) {
           fail(res, 'Loan application not found', 404, 'NOT_FOUND');
@@ -155,17 +154,13 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
           fail(res, error.message.replace('INVALID_STATE: ', ''), 409, 'CONFLICT');
           return;
         }
-        if (error instanceof Error && error.message.startsWith('FORBIDDEN_SCOPE:')) {
-          fail(res, error.message.replace('FORBIDDEN_SCOPE: ', ''), 403, 'FORBIDDEN');
-          return;
-        }
         next(error);
       }
     },
 
     async loanHistoryController(req: Request, res: Response, next: NextFunction) {
       try {
-        if (req.user?.role !== 'remote_admin') {
+        if (req.user?.role !== 'secondary_admin') {
           fail(res, 'Forbidden', 403, 'FORBIDDEN');
           return;
         }
@@ -185,7 +180,7 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
 
     async rejectApplicationController(req: Request, res: Response, next: NextFunction) {
       try {
-        if (req.user?.role !== 'remote_admin') {
+        if (req.user?.role !== 'secondary_admin') {
           fail(res, 'Forbidden', 403, 'FORBIDDEN');
           return;
         }
@@ -195,7 +190,6 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
           id,
           req.user.sub,
           reviewNote,
-          req.user.koperasi_name ?? null,
         );
         if (!app) {
           fail(res, 'Loan application not found', 404, 'NOT_FOUND');
@@ -205,10 +199,6 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
       } catch (error) {
         if (error instanceof Error && error.message.startsWith('INVALID_STATE:')) {
           fail(res, error.message.replace('INVALID_STATE: ', ''), 409, 'CONFLICT');
-          return;
-        }
-        if (error instanceof Error && error.message.startsWith('FORBIDDEN_SCOPE:')) {
-          fail(res, error.message.replace('FORBIDDEN_SCOPE: ', ''), 403, 'FORBIDDEN');
           return;
         }
         next(error);

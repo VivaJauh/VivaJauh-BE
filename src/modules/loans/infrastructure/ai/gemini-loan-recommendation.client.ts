@@ -17,14 +17,14 @@ export type GeminiLoanRecommendationClient = {
 
 const SYSTEM_PROMPT = `!!OUTPUT DALAM BAHASA INDONESIA Anda adalah asisten analisis risiko pinjaman untuk sistem manajemen koperasi Indonesia.
 Tugas Anda adalah memberikan rekomendasi yang berhati-hati, bukan keputusan akhir.
-Analisis riwayat pembayaran lintas koperasi, tunggakan yang belum diselesaikan, jumlah pinjaman yang diminta, dan tenor.
+Analisis riwayat pembayaran 12 bulan terakhir lintas koperasi, tunggakan yang belum diselesaikan, jumlah pinjaman yang diminta, dan tenor.
 Kembalikan hanya JSON yang ketat.
 Jangan mengarang fakta yang tidak ada dalam input.
 Jika data tidak lengkap, sebutkan ketidakpastiannya.
 Gunakan salah satu dari tingkat risiko berikut: low, medium, high.
 Gunakan salah satu dari rekomendasi berikut: approve, manual_review, reject_or_require_clearance.
 Tulis seluruh penjelasan, ringkasan, faktor positif, faktor negatif, dan saran dalam Bahasa Indonesia.
-Keputusan akhir harus dibuat oleh admin koperasi yang berwenang.`;
+Keputusan akhir harus dibuat oleh secondary admin koperasi sekunder.`;
 
 export function createGeminiLoanRecommendationClient(apiKey?: string): GeminiLoanRecommendationClient {
   return {
@@ -45,6 +45,7 @@ export function createGeminiLoanRecommendationClient(apiKey?: string): GeminiLoa
           total_repaid: h.totalRepaid,
           late_payments: h.latePayments,
           outstanding_arrears: h.outstandingArrears,
+          recorded_at: h.recordedAt.toISOString(),
         })),
         computed_key_stats: input.keyStats,
       };

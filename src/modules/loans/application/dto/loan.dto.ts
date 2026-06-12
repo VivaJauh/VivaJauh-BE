@@ -21,9 +21,13 @@ export type LoanHistory = {
   totalRepaid: number;
   latePayments: number;
   outstandingArrears: number;
+  recordedAt: Date;
 };
 
 export type LoanKeyStats = {
+  recap_period_months: 12;
+  recap_start_date: string;
+  recap_end_date: string;
   known_cooperatives: number;
   good_history_count: number;
   arrears_cooperative_count: number;
@@ -48,6 +52,7 @@ export type LoanEvidence = {
   total_repaid: number;
   late_payments: number;
   outstanding_arrears: number;
+  recorded_at: string;
 };
 
 export type LoanRecommendation = {
@@ -98,6 +103,9 @@ export type LoanHistoryEntryMetadata = {
   risk_level?: string | null;
   recommendation?: string | null;
   review_note?: string | null;
+  recap_period_months?: number;
+  recap_start_date?: string | null;
+  recap_end_date?: string | null;
 };
 
 export type LoanHistoryEntry = {

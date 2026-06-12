@@ -80,9 +80,13 @@ export const prismaLoanRepository: LoanRepository = {
     return raw.map(toApplication);
   },
 
-  async findBorrowerHistories(applicantName: string, applicantMemberId: string | null): Promise<LoanHistory[]> {
+  async findBorrowerHistories(applicantName: string, applicantMemberId: string | null, since: Date): Promise<LoanHistory[]> {
     const records = await prisma.trSyncRecord.findMany({
-      where: { recordType: 'loan_history' },
+      where: {
+        recordType: 'loan_history',
+        recordedAt: { gte: since },
+      },
+      orderBy: { recordedAt: 'desc' },
     });
 
     const normalize = (v: unknown) =>
@@ -92,6 +96,7 @@ export const prismaLoanRepository: LoanRepository = {
 
     const withPayload = records.map((r) => ({
       payload: (r.payloadJson ?? {}) as Record<string, unknown>,
+      recordedAt: r.recordedAt,
     }));
 
     const byMemberId = targetMemberId
@@ -103,13 +108,14 @@ export const prismaLoanRepository: LoanRepository = {
         ? byMemberId
         : withPayload.filter(({ payload }) => normalize(payload.member_name) === targetName);
 
-    return matched.map(({ payload: p }) => ({
+    return matched.map(({ payload: p, recordedAt }) => ({
       koperasi: typeof p.koperasi === 'string' ? p.koperasi : '',
       loanRef: typeof p.loan_ref === 'string' ? p.loan_ref : null,
       status: typeof p.status === 'string' ? p.status : 'unknown',
       totalRepaid: typeof p.total_repaid === 'number' ? p.total_repaid : 0,
       latePayments: typeof p.late_payments === 'number' ? p.late_payments : 0,
       outstandingArrears: typeof p.outstanding_arrears === 'number' ? p.outstanding_arrears : 0,
+      recordedAt,
     }));
   },
 
@@ -199,6 +205,9 @@ export const prismaLoanRepository: LoanRepository = {
         risk_level: typeof raw.risk_level === 'string' ? raw.risk_level : null,
         recommendation: typeof raw.recommendation === 'string' ? raw.recommendation : null,
         review_note: typeof raw.review_note === 'string' ? raw.review_note : null,
+        recap_period_months: typeof raw.recap_period_months === 'number' ? raw.recap_period_months : undefined,
+        recap_start_date: typeof raw.recap_start_date === 'string' ? raw.recap_start_date : null,
+        recap_end_date: typeof raw.recap_end_date === 'string' ? raw.recap_end_date : null,
       };
       return {
         id: log.id,
