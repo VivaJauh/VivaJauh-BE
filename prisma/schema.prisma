@@ -8,8 +8,9 @@ datasource db {
 }
 
 enum UserRole {
-  field_officer
-  remote_admin
+  member
+  primary_admin
+  secondary_admin
 }
 
 enum SyncStatus {
@@ -41,16 +42,18 @@ enum LoanRiskLevel {
 }
 
 model MsUser {
-  id           String   @id @default(uuid())
-  username     String   @unique
-  password     String
-  name         String
-  email        String   @unique
-  role         UserRole @default(field_officer)
-  koperasiName String?
-  status       String   @default("active")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String
+  name      String
+  email     String   @unique
+  role      UserRole @default(member)
+  tenantId  String?
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant MsTenant? @relation("UserTenant", fields: [tenantId], references: [id])
 
   devices             MsDevice[]
   tenants             MsTenant[]
@@ -61,6 +64,8 @@ model MsUser {
   loanRepayments      TrLoanRepayment[]
   sellerCredits       TrSellerCredit[]
   loanApplications    TrLoanApplication[]
+
+  @@index([tenantId])
 }
 
 model MsTenant {
@@ -72,10 +77,12 @@ model MsTenant {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  user MsUser @relation(fields: [userId], references: [id])
+  user    MsUser   @relation(fields: [userId], references: [id])
+  members MsUser[] @relation("UserTenant")
 
   @@index([userId])
   @@index([koperasiName])
+  @@index([koperasiType])
 }
 
 model MsDevice {
