@@ -32,6 +32,7 @@ async function buildSession(repository: AuthRepository, tokenSigner: TokenSigner
     name: user.name,
     email: user.email,
     role: user.role,
+    koperasi_name: user.koperasiName,
     device_id: device.id,
   };
 
@@ -41,6 +42,7 @@ async function buildSession(repository: AuthRepository, tokenSigner: TokenSigner
     name: user.name,
     email: user.email,
     role: user.role,
+    koperasiName: user.koperasiName,
     deviceId: device.id,
   };
 }
@@ -67,6 +69,7 @@ export function createAuthUseCases(repository: AuthRepository, tokenSigner: Toke
         password: hashPassword(password),
         name,
         email,
+        koperasiName: 'Harapan Baru',
       });
 
       return buildSession(repository, tokenSigner, user, deviceIdentifier);

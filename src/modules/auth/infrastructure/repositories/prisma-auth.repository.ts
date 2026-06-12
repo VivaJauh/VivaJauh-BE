@@ -10,6 +10,7 @@ function toAuthUser(user: Awaited<ReturnType<typeof prisma.msUser.findFirst>>): 
     name: user.name,
     email: user.email,
     role: user.role,
+    koperasiName: user.koperasiName,
     status: user.status,
   };
 }
@@ -27,6 +28,7 @@ export const prismaAuthRepository: AuthRepository = {
         name: input.name,
         email: input.email,
         role: 'field_officer',
+        koperasiName: input.koperasiName,
       },
     });
 

@@ -5,5 +5,6 @@ export type JwtUser = {
   name: string;
   email: string;
   role: Role;
+  koperasi_name?: string | null;
   device_id?: string;
 };

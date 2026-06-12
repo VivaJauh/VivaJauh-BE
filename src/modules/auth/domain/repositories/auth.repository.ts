@@ -7,6 +7,7 @@ export type AuthUser = {
   name: string;
   email: string;
   role: Role;
+  koperasiName: string | null;
   status: string;
 };
 
@@ -16,7 +17,13 @@ export type AuthDevice = {
 
 export type AuthRepository = {
   findExistingUser(username: string, email: string): Promise<AuthUser | null>;
-  createFieldOfficerUser(input: { username: string; password: string; name: string; email: string }): Promise<AuthUser>;
+  createFieldOfficerUser(input: {
+    username: string;
+    password: string;
+    name: string;
+    email: string;
+    koperasiName: string;
+  }): Promise<AuthUser>;
   findActiveUserByIdentifier(identifier: string): Promise<AuthUser | null>;
   upsertDevice(input: { userId: string; deviceIdentifier: string; now: Date }): Promise<AuthDevice>;
 };
