@@ -1,7 +1,34 @@
+import { createHash } from 'crypto';
 import { Prisma } from '../../../../generated/prisma/client';
 import { prisma } from '../../../../shared/infrastructure/persistence/prisma';
 import type { LoanApplication, LoanHistory, LoanHistoryEntry, LoanHistoryEntryMetadata, LoanRecommendation, LoanStatus } from '../../application/dto/loan.dto';
 import type { CreateLoanApplicationRepositoryInput, LoanRepository, SaveLoanRecommendationInput } from '../../domain/repositories/loan.repository';
+
+function computeAuditHash(input: {
+  prevHash: string | null;
+  userId: string;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  resultStatus: string;
+  metadataJson: unknown;
+  createdAt: Date;
+}): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        prev: input.prevHash,
+        user_id: input.userId,
+        action: input.action,
+        target_type: input.targetType,
+        target_id: input.targetId,
+        result_status: input.resultStatus,
+        metadata: input.metadataJson ?? null,
+        created_at: input.createdAt.toISOString(),
+      }),
+    )
+    .digest('hex');
+}
 
 type RawApplication = Awaited<ReturnType<typeof prisma.trLoanApplication.findFirst>> & {
   recommendation: Awaited<ReturnType<typeof prisma.trLoanRecommendation.findFirst>> | null;
@@ -164,6 +191,25 @@ export const prismaLoanRepository: LoanRepository = {
   },
 
   async createLoanAuditLog(input): Promise<void> {
+    const previous = await prisma.trAuditLog.findFirst({
+      where: { targetType: 'LoanApplication', targetId: input.targetId },
+      orderBy: { createdAt: 'desc' },
+      select: { selfHash: true },
+    });
+
+    const createdAt = new Date();
+    const prevHash = previous?.selfHash ?? null;
+    const selfHash = computeAuditHash({
+      prevHash,
+      userId: input.userId,
+      action: input.action,
+      targetType: 'LoanApplication',
+      targetId: input.targetId,
+      resultStatus: input.resultStatus,
+      metadataJson: input.metadataJson,
+      createdAt,
+    });
+
     await prisma.trAuditLog.create({
       data: {
         userId: input.userId,
@@ -172,8 +218,62 @@ export const prismaLoanRepository: LoanRepository = {
         targetId: input.targetId,
         resultStatus: input.resultStatus,
         metadataJson: input.metadataJson as Prisma.InputJsonValue,
+        prevHash,
+        selfHash,
+        createdAt,
       },
     });
+  },
+
+  async verifyLoanAuditChain(loanApplicationId: string) {
+    const logs = await prisma.trAuditLog.findMany({
+      where: { targetType: 'LoanApplication', targetId: loanApplicationId },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    let checked = 0;
+    let legacy = 0;
+    let expectedPrev: string | null = null;
+    let hasHashedEntry = false;
+
+    for (const log of logs) {
+      if (!log.selfHash) {
+        legacy += 1;
+        continue;
+      }
+
+      const recomputed = computeAuditHash({
+        prevHash: log.prevHash,
+        userId: log.userId,
+        action: log.action,
+        targetType: log.targetType,
+        targetId: log.targetId,
+        resultStatus: log.resultStatus,
+        metadataJson: log.metadataJson,
+        createdAt: log.createdAt,
+      });
+
+      const chainLinked = !hasHashedEntry || log.prevHash === expectedPrev;
+      if (recomputed !== log.selfHash || !chainLinked) {
+        return {
+          integrity: 'broken' as const,
+          checked_entries: checked,
+          legacy_entries: legacy,
+          broken_at_entry_id: log.id,
+        };
+      }
+
+      expectedPrev = log.selfHash;
+      hasHashedEntry = true;
+      checked += 1;
+    }
+
+    return {
+      integrity: 'valid' as const,
+      checked_entries: checked,
+      legacy_entries: legacy,
+      broken_at_entry_id: null,
+    };
   },
 
   async findLoanAuditHistory(loanApplicationId: string, from?: Date, to?: Date): Promise<LoanHistoryEntry[]> {
@@ -193,7 +293,15 @@ export const prismaLoanRepository: LoanRepository = {
       orderBy: { createdAt: 'asc' },
     });
 
+    const actorIds = [...new Set(logs.map((log) => log.userId))];
+    const actors = await prisma.msUser.findMany({
+      where: { id: { in: actorIds } },
+      select: { id: true, name: true, role: true },
+    });
+    const actorById = new Map(actors.map((actor) => [actor.id, actor]));
+
     return logs.map((log) => {
+      const actor = actorById.get(log.userId);
       const raw = (log.metadataJson ?? {}) as Record<string, unknown>;
       const metadata: LoanHistoryEntryMetadata = {
         applicant_name: typeof raw.applicant_name === 'string' ? raw.applicant_name : undefined,
@@ -208,13 +316,19 @@ export const prismaLoanRepository: LoanRepository = {
         recap_period_months: typeof raw.recap_period_months === 'number' ? raw.recap_period_months : undefined,
         recap_start_date: typeof raw.recap_start_date === 'string' ? raw.recap_start_date : null,
         recap_end_date: typeof raw.recap_end_date === 'string' ? raw.recap_end_date : null,
+        period_from: typeof raw.period_from === 'string' ? raw.period_from : null,
+        period_to: typeof raw.period_to === 'string' ? raw.period_to : null,
+        report_hash: typeof raw.report_hash === 'string' ? raw.report_hash : null,
       };
       return {
         id: log.id,
         action: log.action,
         actor_user_id: log.userId,
+        actor_name: actor?.name ?? 'Pengguna tidak dikenal',
+        actor_role: actor?.role ?? 'unknown',
         result_status: log.resultStatus,
         metadata,
+        self_hash: log.selfHash,
         created_at: log.createdAt,
       };
     });
