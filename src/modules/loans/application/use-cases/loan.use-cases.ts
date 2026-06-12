@@ -15,45 +15,6 @@ import type {
 
 const FAST_DECISION_THRESHOLD_MS = 30 * 60 * 1000;
 
-const MOCK_BORROWER_PROFILES: Record<string, LoanHistory[]> = {
-  'Pak Acep': [
-    {
-      koperasi: 'Padiwangi',
-      loanRef: 'PDW-Acep-001',
-      status: 'good_history',
-      totalRepaid: 5000000,
-      latePayments: 0,
-      outstandingArrears: 0,
-    },
-    {
-      koperasi: 'Tirta Bersama',
-      loanRef: 'TRB-Acep-001',
-      status: 'minor_arrears',
-      totalRepaid: 1800000,
-      latePayments: 1,
-      outstandingArrears: 250000,
-    },
-  ],
-  'Acep-001': [
-    {
-      koperasi: 'Padiwangi',
-      loanRef: 'PDW-Acep-001',
-      status: 'good_history',
-      totalRepaid: 5000000,
-      latePayments: 0,
-      outstandingArrears: 0,
-    },
-    {
-      koperasi: 'Tirta Bersama',
-      loanRef: 'TRB-Acep-001',
-      status: 'minor_arrears',
-      totalRepaid: 1800000,
-      latePayments: 1,
-      outstandingArrears: 250000,
-    },
-  ],
-};
-
 function computeKeyStats(histories: LoanHistory[], requestedAmount: number): LoanKeyStats {
   const goodHistoryCount = histories.filter((h) => h.outstandingArrears === 0 && h.latePayments === 0).length;
   const arrearsCount = histories.filter((h) => h.outstandingArrears > 0).length;
@@ -106,6 +67,15 @@ function computeEvidence(histories: LoanHistory[]): LoanEvidence[] {
 function ruleBasedRecommendation(
   stats: LoanKeyStats,
 ): { riskLevel: LoanRiskLevel; recommendation: LoanRecommendationLabel; summary: string } {
+  if (stats.known_cooperatives === 0) {
+    return {
+      riskLevel: 'medium',
+      recommendation: 'manual_review',
+      summary:
+        'Tidak ditemukan riwayat pinjaman lintas koperasi untuk pemohon ini. Tidak adanya riwayat bukan berarti bebas risiko — verifikasi identitas dan penilaian manual oleh admin diperlukan sebelum keputusan dibuat.',
+    };
+  }
+
   if (stats.total_unresolved_arrears === 0 && stats.late_payment_count === 0) {
     return {
       riskLevel: 'low',
@@ -173,23 +143,21 @@ export function createLoanUseCases(repository: LoanRepository, gemini: GeminiLoa
       const app = await repository.findLoanApplicationById(id);
       if (!app) return null;
 
-      const seededHistories = await repository.findBorrowerHistories(app.applicantName, app.applicantMemberId);
-
-      const mockHistories =
-        MOCK_BORROWER_PROFILES[app.applicantName] ??
-        (app.applicantMemberId ? MOCK_BORROWER_PROFILES[app.applicantMemberId] : undefined);
-
-      const histories: LoanHistory[] = seededHistories.length > 0 ? seededHistories : (mockHistories ?? []);
+      const histories: LoanHistory[] = await repository.findBorrowerHistories(
+        app.applicantName,
+        app.applicantMemberId,
+      );
 
       const keyStats = computeKeyStats(histories, app.requestedAmount);
       const chartData = computeChartData(histories);
       const evidence = computeEvidence(histories);
 
+      const ruleResult = ruleBasedRecommendation(keyStats);
+      let riskLevel: LoanRiskLevel = ruleResult.riskLevel;
+      let recommendation: LoanRecommendationLabel = ruleResult.recommendation;
+      let summary: string = ruleResult.summary;
       let modelProvider = 'rule_based';
       let modelRawResponse: object | null = null;
-      let riskLevel: LoanRiskLevel;
-      let recommendation: LoanRecommendationLabel;
-      let summary: string;
 
       const geminiResult = await gemini.generate({
         applicantName: app.applicantName,
@@ -203,16 +171,20 @@ export function createLoanUseCases(repository: LoanRepository, gemini: GeminiLoa
       });
 
       if (geminiResult) {
-        modelProvider = 'gemini';
         modelRawResponse = geminiResult as object;
-        riskLevel = geminiResult.risk_level;
-        recommendation = geminiResult.recommendation;
-        summary = geminiResult.summary;
-      } else {
-        const fallback = ruleBasedRecommendation(keyStats);
-        riskLevel = fallback.riskLevel;
-        recommendation = fallback.recommendation;
-        summary = fallback.summary;
+        const riskRank: Record<LoanRiskLevel, number> = { low: 0, medium: 1, high: 2 };
+
+        if (riskRank[geminiResult.risk_level] > riskRank[riskLevel]) {
+          modelProvider = 'gemini_escalated';
+          riskLevel = geminiResult.risk_level;
+          recommendation = geminiResult.recommendation;
+          summary = geminiResult.summary;
+        } else if (geminiResult.risk_level === riskLevel) {
+          modelProvider = 'gemini_narrative';
+          summary = geminiResult.summary;
+        } else {
+          modelProvider = 'rule_based_guarded';
+        }
       }
 
       const saved = await repository.saveLoanRecommendation({
@@ -255,6 +227,12 @@ export function createLoanUseCases(repository: LoanRepository, gemini: GeminiLoa
     },
 
     async approveApplication(id: string, reviewedBy: string, reviewNote: string | null) {
+      const existing = await repository.findLoanApplicationById(id);
+      if (!existing) return null;
+      if (existing.status !== 'pending_review') {
+        throw new Error(`INVALID_STATE: application has already been ${existing.status}`);
+      }
+
       const app = await repository.updateLoanDecision({
         id,
         status: 'approved',
@@ -335,6 +313,12 @@ export function createLoanUseCases(repository: LoanRepository, gemini: GeminiLoa
     },
 
     async rejectApplication(id: string, reviewedBy: string, reviewNote: string | null) {
+      const existing = await repository.findLoanApplicationById(id);
+      if (!existing) return null;
+      if (existing.status !== 'pending_review') {
+        throw new Error(`INVALID_STATE: application has already been ${existing.status}`);
+      }
+
       const app = await repository.updateLoanDecision({
         id,
         status: 'rejected',
