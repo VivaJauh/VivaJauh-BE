@@ -1,0 +1,43 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  field_officer
+  remote_admin
+}
+
+model MsUser {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String
+  name      String
+  email     String   @unique
+  role      UserRole @default(field_officer)
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  devices MsDevice[]
+}
+
+model MsDevice {
+  id               String    @id @default(uuid())
+  userId           String
+  deviceIdentifier String
+  deviceName       String?
+  platform         String    @default("flutter")
+  status           String    @default("active")
+  lastSeenAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user MsUser @relation(fields: [userId], references: [id])
+
+  @@unique([deviceIdentifier])
+}
