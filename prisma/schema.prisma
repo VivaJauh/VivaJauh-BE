@@ -12,6 +12,21 @@ enum UserRole {
   remote_admin
 }
 
+enum SyncStatus {
+  pending
+  syncing
+  synced
+  failed
+  conflict
+}
+
+enum VerificationStatus {
+  unverified
+  verified
+  rejected
+  needs_correction
+}
+
 model MsUser {
   id        String   @id @default(uuid())
   username  String   @unique
@@ -23,7 +38,13 @@ model MsUser {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  devices MsDevice[]
+  devices             MsDevice[]
+  records             TrSyncRecord[]
+  feedTransactions    TrFeedTransaction[]
+  livestockEvents     TrLivestockEvent[]
+  savingsTransactions TrSavingsTransaction[]
+  loanRepayments      TrLoanRepayment[]
+  sellerCredits       TrSellerCredit[]
 }
 
 model MsDevice {
@@ -37,7 +58,135 @@ model MsDevice {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  user MsUser @relation(fields: [userId], references: [id])
+  user    MsUser         @relation(fields: [userId], references: [id])
+  records TrSyncRecord[]
 
   @@unique([deviceIdentifier])
+}
+
+model TrSyncRecord {
+  id                 String             @id @default(uuid())
+  localId            String
+  userId             String
+  deviceId           String
+  recordType         String
+  payloadJson        Json
+  syncStatus         SyncStatus         @default(synced)
+  verificationStatus VerificationStatus @default(unverified)
+  idempotencyKey     String
+  recordedAt         DateTime
+  uploadedAt         DateTime?
+  errorMessage       String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user   MsUser   @relation(fields: [userId], references: [id])
+  device MsDevice @relation(fields: [deviceId], references: [id])
+
+  feedTransaction    TrFeedTransaction?
+  livestockEvent     TrLivestockEvent?
+  savingsTransaction TrSavingsTransaction?
+  loanRepayment      TrLoanRepayment?
+  sellerCredit       TrSellerCredit?
+
+  @@unique([idempotencyKey])
+  @@index([recordType])
+  @@index([verificationStatus])
+}
+
+model TrFeedTransaction {
+  id             String   @id @default(uuid())
+  recordId       String   @unique
+  userId         String
+  feedType       String
+  direction      String   @default("masuk")
+  quantityKg     Float
+  adjustmentSign Int      @default(1)
+  warehouse      String?
+  recordedAt     DateTime
+  createdAt      DateTime @default(now())
+
+  record TrSyncRecord @relation(fields: [recordId], references: [id])
+  user   MsUser       @relation(fields: [userId], references: [id])
+
+  @@index([feedType])
+}
+
+model TrLivestockEvent {
+  id            String   @id @default(uuid())
+  recordId      String   @unique
+  userId        String
+  livestockType String
+  eventType     String   @default("penambahan")
+  quantity      Float
+  pen           String?
+  healthNote    String?
+  recordedAt    DateTime
+  createdAt     DateTime @default(now())
+
+  record TrSyncRecord @relation(fields: [recordId], references: [id])
+  user   MsUser       @relation(fields: [userId], references: [id])
+
+  @@index([livestockType])
+}
+
+model TrSavingsTransaction {
+  id         String   @id @default(uuid())
+  recordId   String   @unique
+  userId     String
+  memberName String
+  memberId   String?
+  direction  String   @default("setor")
+  amount     Float
+  recordedAt DateTime
+  createdAt  DateTime @default(now())
+
+  record TrSyncRecord @relation(fields: [recordId], references: [id])
+  user   MsUser       @relation(fields: [userId], references: [id])
+
+  @@index([memberName])
+}
+
+model TrLoanRepayment {
+  id         String   @id @default(uuid())
+  recordId   String   @unique
+  userId     String
+  memberName String
+  memberId   String?
+  loanRef    String?
+  amount     Float
+  recordedAt DateTime
+  createdAt  DateTime @default(now())
+
+  record TrSyncRecord @relation(fields: [recordId], references: [id])
+  user   MsUser       @relation(fields: [userId], references: [id])
+
+  @@index([memberName])
+}
+
+model TrSellerCredit {
+  id         String   @id @default(uuid())
+  recordId   String   @unique
+  userId     String
+  sellerName String
+  items      String?
+  amount     Float
+  recordedAt DateTime
+  createdAt  DateTime @default(now())
+
+  record TrSyncRecord @relation(fields: [recordId], references: [id])
+  user   MsUser       @relation(fields: [userId], references: [id])
+
+  @@index([sellerName])
+}
+
+model TrAuditLog {
+  id           String   @id @default(uuid())
+  userId       String
+  action       String
+  targetType   String
+  targetId     String?
+  resultStatus String
+  metadataJson Json?
+  createdAt    DateTime @default(now())
 }
