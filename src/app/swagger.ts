@@ -558,7 +558,7 @@ export const openApiDocument = {
     '/loans/{id}/history': {
       get: {
         tags: ['Loans'],
-        summary: 'Get loan audit history (remote_admin only)',
+        summary: 'Get loan audit history (secondary_admin only)',
         security: [{ bearerAuth: [] }],
         parameters: [
           { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
@@ -613,7 +613,7 @@ export const openApiDocument = {
     '/loans/{id}/approve': {
       patch: {
         tags: ['Loans'],
-        summary: 'Approve a loan application (remote_admin only)',
+        summary: 'Approve a loan application (secondary_admin only)',
         security: [{ bearerAuth: [] }],
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         requestBody: {
@@ -647,7 +647,7 @@ export const openApiDocument = {
     '/loans/{id}/reject': {
       patch: {
         tags: ['Loans'],
-        summary: 'Reject a loan application (remote_admin only)',
+        summary: 'Reject a loan application (secondary_admin only)',
         security: [{ bearerAuth: [] }],
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         requestBody: {
@@ -830,8 +830,8 @@ export const openApiDocument = {
       RegisterRequest: {
         type: 'object',
         properties: {
-          name: { type: 'string', example: 'Field Officer' },
-          email: { type: 'string', format: 'email', example: 'officer@example.com' },
+          name: { type: 'string', example: 'Pak Hendra' },
+          email: { type: 'string', format: 'email', example: 'pak.hendra@example.com' },
           password: { type: 'string', minLength: 6, example: 'secret123' },
           device_id: { type: 'string', example: 'flutter-device' },
         },
@@ -840,7 +840,7 @@ export const openApiDocument = {
       LoginRequest: {
         type: 'object',
         properties: {
-          identifier: { type: 'string', example: 'officer@example.com' },
+          identifier: { type: 'string', example: 'pak.hendra@example.com' },
           password: { type: 'string', example: 'secret123' },
           device_id: { type: 'string', example: 'flutter-device' },
         },
@@ -853,7 +853,10 @@ export const openApiDocument = {
           userId: { type: 'string' },
           name: { type: 'string' },
           email: { type: 'string', format: 'email' },
-          role: { type: 'string' },
+          role: { $ref: '#/components/schemas/UserRoleValue' },
+          tenantId: { type: 'string', nullable: true },
+          koperasiName: { type: 'string', nullable: true },
+          koperasiType: { type: 'string', nullable: true },
           deviceId: { type: 'string' },
         },
         required: ['token', 'userId', 'name', 'email', 'role', 'deviceId'],
@@ -864,7 +867,10 @@ export const openApiDocument = {
           sub: { type: 'string' },
           name: { type: 'string' },
           email: { type: 'string', format: 'email' },
-          role: { type: 'string' },
+          role: { $ref: '#/components/schemas/UserRoleValue' },
+          tenant_id: { type: 'string', nullable: true },
+          koperasi_name: { type: 'string', nullable: true },
+          koperasi_type: { type: 'string', nullable: true },
           device_id: { type: 'string' },
         },
         required: ['sub', 'name', 'email', 'role'],
@@ -996,6 +1002,10 @@ export const openApiDocument = {
       VerificationStatusValue: {
         type: 'string',
         enum: ['unverified', 'verified', 'rejected', 'needs_correction'],
+      },
+      UserRoleValue: {
+        type: 'string',
+        enum: ['member', 'primary_admin', 'secondary_admin'],
       },
       LoanStatusValue: {
         type: 'string',

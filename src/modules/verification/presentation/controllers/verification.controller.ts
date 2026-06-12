@@ -7,7 +7,7 @@ export function createVerificationControllers(verificationUseCases: Verification
   return {
     async verificationQueueController(req: Request, res: Response, next: NextFunction) {
       try {
-        if (req.user?.role !== 'remote_admin') {
+        if (req.user?.role !== 'secondary_admin') {
           fail(res, 'Forbidden', 403, 'FORBIDDEN');
           return;
         }
@@ -19,7 +19,7 @@ export function createVerificationControllers(verificationUseCases: Verification
 
     async verifyRecordController(req: Request, res: Response, next: NextFunction) {
       try {
-        if (req.user?.role !== 'remote_admin') {
+        if (req.user?.role !== 'secondary_admin') {
           fail(res, 'Forbidden', 403, 'FORBIDDEN');
           return;
         }

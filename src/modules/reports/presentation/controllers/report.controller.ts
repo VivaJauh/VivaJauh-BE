@@ -5,7 +5,7 @@ import { toCsv, toExcelBuffer, toPdfBuffer } from '../export/report-export';
 
 export function createReportControllers(reportUseCases: ReportUseCases) {
   async function requireAdmin(userRole: string | undefined, res: Response, userId?: string, action = 'admin_access') {
-    if (userRole === 'remote_admin') return true;
+    if (userRole === 'secondary_admin') return true;
     await reportUseCases.auditDenied(userId, action);
     fail(res, 'Forbidden', 403, 'FORBIDDEN');
     return false;
