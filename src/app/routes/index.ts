@@ -16,6 +16,10 @@ import { createSyncUseCases } from '../../modules/sync/application/use-cases/syn
 import { prismaSyncRepository } from '../../modules/sync/infrastructure/repositories/prisma-sync.repository';
 import { createSyncControllers } from '../../modules/sync/presentation/controllers/sync.controller';
 import { createSyncRouter } from '../../modules/sync/presentation/routes/sync.routes';
+import { createTenantUseCases } from '../../modules/tenants/application/use-cases/tenant.use-cases';
+import { prismaTenantRepository } from '../../modules/tenants/infrastructure/repositories/prisma-tenant.repository';
+import { createTenantControllers } from '../../modules/tenants/presentation/controllers/tenant.controller';
+import { createTenantRouter } from '../../modules/tenants/presentation/routes/tenant.routes';
 import { createVerificationUseCases } from '../../modules/verification/application/use-cases/verification.use-cases';
 import { prismaVerificationRepository } from '../../modules/verification/infrastructure/repositories/prisma-verification.repository';
 import { createVerificationControllers } from '../../modules/verification/presentation/controllers/verification.controller';
@@ -31,9 +35,11 @@ const reportUseCases = createReportUseCases(prismaReportRepository);
 const verificationUseCases = createVerificationUseCases(prismaVerificationRepository);
 const geminiClient = createGeminiLoanRecommendationClient(config.geminiApiKey);
 const loanUseCases = createLoanUseCases(prismaLoanRepository, geminiClient);
+const tenantUseCases = createTenantUseCases(prismaTenantRepository);
 
 apiRouter.use('/auth', createAuthRouter(createAuthControllers(authUseCases)));
 apiRouter.use('/sync', createSyncRouter(createSyncControllers(syncUseCases)));
 apiRouter.use('/reports', createReportRouter(createReportControllers(reportUseCases)));
 apiRouter.use('/verification', createVerificationRouter(createVerificationControllers(verificationUseCases)));
 apiRouter.use('/loans', createLoanRouter(createLoanControllers(loanUseCases)));
+apiRouter.use('/tenants', createTenantRouter(createTenantControllers(tenantUseCases)));
