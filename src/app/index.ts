@@ -1,8 +1,10 @@
 import cors from 'cors';
 import express, { type NextFunction, type Request, type Response } from 'express';
+import swaggerUi from 'swagger-ui-express';
 import { config } from '../shared/infrastructure/config/env';
 import { fail, ok } from '../shared/presentation/http/response';
 import { apiRouter } from './routes';
+import { openApiDocument } from './swagger';
 
 const app = express();
 
@@ -12,6 +14,11 @@ app.use(express.json({ limit: '2mb' }));
 app.get('/health', (_req, res) => {
   ok(res, { status: 'ok', service: 'VivaJauh API', timestamp: new Date().toISOString() });
 });
+
+app.get('/openapi.json', (_req, res) => {
+  res.json(openApiDocument);
+});
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiDocument));
 
 app.use('/api/v1', apiRouter);
 
