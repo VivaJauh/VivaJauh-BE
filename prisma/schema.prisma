@@ -27,6 +27,19 @@ enum VerificationStatus {
   needs_correction
 }
 
+enum LoanStatus {
+  draft
+  pending_review
+  approved
+  rejected
+}
+
+enum LoanRiskLevel {
+  low
+  medium
+  high
+}
+
 model MsUser {
   id        String   @id @default(uuid())
   username  String   @unique
@@ -46,6 +59,7 @@ model MsUser {
   savingsTransactions TrSavingsTransaction[]
   loanRepayments      TrLoanRepayment[]
   sellerCredits       TrSellerCredit[]
+  loanApplications    TrLoanApplication[]
 }
 
 model MsTenant {
@@ -192,6 +206,46 @@ model TrSellerCredit {
   user   MsUser       @relation(fields: [userId], references: [id])
 
   @@index([sellerName])
+}
+
+model TrLoanApplication {
+  id                String     @id @default(uuid())
+  applicantName     String
+  applicantMemberId String?
+  targetKoperasi    String
+  requestedAmount   Float
+  purpose           String?
+  tenureMonths      Int
+  status            LoanStatus @default(pending_review)
+  submittedBy       String
+  reviewedBy        String?
+  reviewedAt        DateTime?
+  reviewNote        String?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  submitter      MsUser                @relation(fields: [submittedBy], references: [id])
+  recommendation TrLoanRecommendation?
+
+  @@index([applicantName])
+  @@index([targetKoperasi])
+  @@index([status])
+}
+
+model TrLoanRecommendation {
+  id                String        @id @default(uuid())
+  loanApplicationId String        @unique
+  riskLevel         LoanRiskLevel
+  recommendation    String
+  summary           String
+  keyStatsJson      Json
+  chartDataJson     Json
+  evidenceJson      Json
+  modelProvider     String        @default("rule_based")
+  modelRawResponse  Json?
+  createdAt         DateTime      @default(now())
+
+  loanApplication TrLoanApplication @relation(fields: [loanApplicationId], references: [id])
 }
 
 model TrAuditLog {

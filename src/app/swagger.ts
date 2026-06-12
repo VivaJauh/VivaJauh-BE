@@ -17,6 +17,7 @@ export const openApiDocument = {
     { name: 'Sync' },
     { name: 'Reports' },
     { name: 'Verification' },
+    { name: 'Loans' },
   ],
   paths: {
     '/health': {
@@ -468,6 +469,185 @@ export const openApiDocument = {
         },
       },
     },
+    '/loans': {
+      post: {
+        tags: ['Loans'],
+        summary: 'Create a loan application',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/CreateLoanApplicationRequest' },
+            },
+          },
+        },
+        responses: {
+          '201': {
+            description: 'Loan application created',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessResponse' },
+                    { type: 'object', properties: { data: { $ref: '#/components/schemas/LoanApplication' } } },
+                  ],
+                },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+        },
+      },
+      get: {
+        tags: ['Loans'],
+        summary: 'List loan applications',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'status',
+            in: 'query',
+            required: false,
+            schema: { $ref: '#/components/schemas/LoanStatusValue' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Loan applications',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessResponse' },
+                    { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/LoanApplication' } } } },
+                  ],
+                },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+        },
+      },
+    },
+    '/loans/{id}': {
+      get: {
+        tags: ['Loans'],
+        summary: 'Get loan application detail',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          '200': {
+            description: 'Loan application detail',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessResponse' },
+                    { type: 'object', properties: { data: { $ref: '#/components/schemas/LoanApplication' } } },
+                  ],
+                },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+    },
+    '/loans/{id}/recommendation': {
+      post: {
+        tags: ['Loans'],
+        summary: 'Generate loan recommendation',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          '200': {
+            description: 'Loan recommendation',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessResponse' },
+                    { type: 'object', properties: { data: { $ref: '#/components/schemas/LoanRecommendation' } } },
+                  ],
+                },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+    },
+    '/loans/{id}/approve': {
+      patch: {
+        tags: ['Loans'],
+        summary: 'Approve a loan application (remote_admin only)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: false,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/LoanDecisionRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Approved loan application',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessResponse' },
+                    { type: 'object', properties: { data: { $ref: '#/components/schemas/LoanApplication' } } },
+                  ],
+                },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+    },
+    '/loans/{id}/reject': {
+      patch: {
+        tags: ['Loans'],
+        summary: 'Reject a loan application (remote_admin only)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: false,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/LoanDecisionRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Rejected loan application',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessResponse' },
+                    { type: 'object', properties: { data: { $ref: '#/components/schemas/LoanApplication' } } },
+                  ],
+                },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+    },
     '/verification/records/{id}': {
       patch: {
         tags: ['Verification'],
@@ -786,6 +966,65 @@ export const openApiDocument = {
       VerificationStatusValue: {
         type: 'string',
         enum: ['unverified', 'verified', 'rejected', 'needs_correction'],
+      },
+      LoanStatusValue: {
+        type: 'string',
+        enum: ['draft', 'pending_review', 'approved', 'rejected'],
+      },
+      LoanRiskLevelValue: {
+        type: 'string',
+        enum: ['low', 'medium', 'high'],
+      },
+      CreateLoanApplicationRequest: {
+        type: 'object',
+        properties: {
+          applicant_name: { type: 'string', example: 'Pak Acep' },
+          applicant_member_id: { type: 'string', example: 'Acep-001' },
+          target_koperasi: { type: 'string', example: 'Melati Jaya' },
+          requested_amount: { type: 'number', example: 3000000 },
+          purpose: { type: 'string', example: 'Modal usaha sayuran dan cold storage' },
+          tenure_months: { type: 'integer', example: 6 },
+        },
+        required: ['applicant_name', 'target_koperasi', 'requested_amount', 'tenure_months'],
+      },
+      LoanDecisionRequest: {
+        type: 'object',
+        properties: {
+          review_note: { type: 'string', example: 'Approved conditionally.' },
+        },
+      },
+      LoanRecommendation: {
+        type: 'object',
+        properties: {
+          loan_application_id: { type: 'string' },
+          risk_level: { $ref: '#/components/schemas/LoanRiskLevelValue' },
+          recommendation: { type: 'string', enum: ['approve', 'manual_review', 'reject_or_require_clearance'] },
+          summary: { type: 'string' },
+          key_stats: { type: 'object', additionalProperties: true },
+          chart_data: { type: 'object', additionalProperties: true },
+          evidence: { type: 'array', items: { type: 'object', additionalProperties: true } },
+          model_provider: { type: 'string', example: 'gemini' },
+        },
+      },
+      LoanApplication: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          applicant_name: { type: 'string' },
+          applicant_member_id: { type: 'string', nullable: true },
+          target_koperasi: { type: 'string' },
+          requested_amount: { type: 'number' },
+          purpose: { type: 'string', nullable: true },
+          tenure_months: { type: 'integer' },
+          status: { $ref: '#/components/schemas/LoanStatusValue' },
+          submitted_by: { type: 'string' },
+          reviewed_by: { type: 'string', nullable: true },
+          reviewed_at: { type: 'string', format: 'date-time', nullable: true },
+          review_note: { type: 'string', nullable: true },
+          created_at: { type: 'string', format: 'date-time' },
+          updated_at: { type: 'string', format: 'date-time' },
+          recommendation: { $ref: '#/components/schemas/LoanRecommendation', nullable: true },
+        },
       },
     },
   },

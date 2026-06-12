@@ -1,0 +1,300 @@
+import type { GeminiLoanRecommendationClient } from '../../infrastructure/ai/gemini-loan-recommendation.client';
+import type { LoanRepository } from '../../domain/repositories/loan.repository';
+import type {
+  CreateLoanApplicationInput,
+  LoanChartData,
+  LoanEvidence,
+  LoanHistory,
+  LoanKeyStats,
+  LoanRecommendationLabel,
+  LoanRiskLevel,
+  LoanStatus,
+} from '../dto/loan.dto';
+
+const MOCK_BORROWER_PROFILES: Record<string, LoanHistory[]> = {
+  'Pak Acep': [
+    {
+      koperasi: 'Padiwangi',
+      loanRef: 'PDW-Acep-001',
+      status: 'good_history',
+      totalRepaid: 5000000,
+      latePayments: 0,
+      outstandingArrears: 0,
+    },
+    {
+      koperasi: 'Tirta Bersama',
+      loanRef: 'TRB-Acep-001',
+      status: 'minor_arrears',
+      totalRepaid: 1800000,
+      latePayments: 1,
+      outstandingArrears: 250000,
+    },
+  ],
+  'Acep-001': [
+    {
+      koperasi: 'Padiwangi',
+      loanRef: 'PDW-Acep-001',
+      status: 'good_history',
+      totalRepaid: 5000000,
+      latePayments: 0,
+      outstandingArrears: 0,
+    },
+    {
+      koperasi: 'Tirta Bersama',
+      loanRef: 'TRB-Acep-001',
+      status: 'minor_arrears',
+      totalRepaid: 1800000,
+      latePayments: 1,
+      outstandingArrears: 250000,
+    },
+  ],
+};
+
+function computeKeyStats(histories: LoanHistory[], requestedAmount: number): LoanKeyStats {
+  const goodHistoryCount = histories.filter((h) => h.outstandingArrears === 0 && h.latePayments === 0).length;
+  const arrearsCount = histories.filter((h) => h.outstandingArrears > 0).length;
+  const totalRepaid = histories.reduce((s, h) => s + h.totalRepaid, 0);
+  const totalArrears = histories.reduce((s, h) => s + h.outstandingArrears, 0);
+  const latePaymentCount = histories.reduce((s, h) => s + h.latePayments, 0);
+  const ratio = requestedAmount > 0 ? Math.round((totalArrears / requestedAmount) * 10000) / 10000 : 0;
+
+  return {
+    known_cooperatives: histories.length,
+    good_history_count: goodHistoryCount,
+    arrears_cooperative_count: arrearsCount,
+    total_repaid: totalRepaid,
+    total_unresolved_arrears: totalArrears,
+    late_payment_count: latePaymentCount,
+    requested_amount: requestedAmount,
+    arrears_to_requested_amount_ratio: ratio,
+  };
+}
+
+function computeChartData(histories: LoanHistory[]): LoanChartData {
+  return {
+    repayment_by_cooperative: histories.map((h) => ({ label: h.koperasi, value: h.totalRepaid })),
+    arrears_by_cooperative: histories.map((h) => ({ label: h.koperasi, value: h.outstandingArrears })),
+    risk_factors: [
+      { label: 'Riwayat pembayaran baik', value: histories.filter((h) => h.outstandingArrears === 0 && h.latePayments === 0).length },
+      { label: 'Tunggakan belum selesai', value: histories.filter((h) => h.outstandingArrears > 0).length },
+      { label: 'Keterlambatan pembayaran', value: histories.reduce((s, h) => s + h.latePayments, 0) },
+    ],
+  };
+}
+
+function computeEvidence(histories: LoanHistory[]): LoanEvidence[] {
+  return histories.map((h) => ({
+    koperasi: h.koperasi,
+    finding:
+      h.outstandingArrears > 0
+        ? `Terdapat tunggakan kecil yang belum diselesaikan sebesar ${h.outstandingArrears}`
+        : h.latePayments > 0
+          ? `Riwayat pembayaran memiliki ${h.latePayments} keterlambatan`
+          : 'Riwayat pembayaran lancar',
+    loan_ref: h.loanRef,
+    status: h.status,
+    total_repaid: h.totalRepaid,
+    late_payments: h.latePayments,
+    outstanding_arrears: h.outstandingArrears,
+  }));
+}
+
+function ruleBasedRecommendation(
+  stats: LoanKeyStats,
+): { riskLevel: LoanRiskLevel; recommendation: LoanRecommendationLabel; summary: string } {
+  if (stats.total_unresolved_arrears === 0 && stats.late_payment_count === 0) {
+    return {
+      riskLevel: 'low',
+      recommendation: 'approve',
+      summary: `Pemohon memiliki riwayat pembayaran bersih di ${stats.known_cooperatives} koperasi. Tidak ada tunggakan atau keterlambatan pembayaran yang terdeteksi. Direkomendasikan untuk disetujui.`,
+    };
+  }
+
+  if (stats.arrears_to_requested_amount_ratio <= 0.1 && stats.late_payment_count <= 1) {
+    return {
+      riskLevel: 'medium',
+      recommendation: 'manual_review',
+      summary: `Pemohon memiliki profil pembayaran campuran: ${stats.good_history_count} koperasi dengan riwayat baik, tetapi ${stats.arrears_cooperative_count} koperasi masih memiliki tunggakan yang belum diselesaikan. Admin perlu melakukan peninjauan sebelum menyetujui.`,
+    };
+  }
+
+  return {
+    riskLevel: 'high',
+    recommendation: 'reject_or_require_clearance',
+    summary: `Pemohon memiliki tunggakan belum selesai yang signifikan (${stats.total_unresolved_arrears}) dan/atau beberapa keterlambatan pembayaran. Pelunasan atau klarifikasi diperlukan sebelum pinjaman dapat disetujui.`,
+  };
+}
+
+export function createLoanUseCases(repository: LoanRepository, gemini: GeminiLoanRecommendationClient) {
+  return {
+    async createApplication(input: CreateLoanApplicationInput) {
+      const name = typeof input.applicantName === 'string' ? input.applicantName.trim() : '';
+      const targetKoperasi = typeof input.targetKoperasi === 'string' ? input.targetKoperasi.trim() : '';
+      const requestedAmount = Number(input.requestedAmount);
+      const tenureMonths = Number(input.tenureMonths);
+
+      if (!name) throw new Error('INVALID_INPUT: applicant_name is required');
+      if (!targetKoperasi) throw new Error('INVALID_INPUT: target_koperasi is required');
+      if (!requestedAmount || requestedAmount <= 0) throw new Error('INVALID_INPUT: requested_amount must be a positive number');
+      if (!tenureMonths || tenureMonths <= 0) throw new Error('INVALID_INPUT: tenure_months must be a positive number');
+
+      const app = await repository.createLoanApplication({
+        applicantName: name,
+        applicantMemberId: typeof input.applicantMemberId === 'string' ? input.applicantMemberId.trim() || null : null,
+        targetKoperasi,
+        requestedAmount,
+        purpose: typeof input.purpose === 'string' ? input.purpose.trim() || null : null,
+        tenureMonths,
+        submittedBy: input.submittedBy,
+      });
+
+      await repository.createLoanAuditLog({
+        userId: input.submittedBy,
+        action: 'loan_application_created',
+        targetId: app.id,
+        resultStatus: 'pending_review',
+        metadataJson: {
+          applicant_name: app.applicantName,
+          target_koperasi: app.targetKoperasi,
+        },
+      });
+
+      return app;
+    },
+
+    async generateRecommendation(id: string, userId: string) {
+      const app = await repository.findLoanApplicationById(id);
+      if (!app) return null;
+
+      const seededHistories = await repository.findBorrowerHistories(app.applicantName, app.applicantMemberId);
+
+      const mockHistories =
+        MOCK_BORROWER_PROFILES[app.applicantName] ??
+        (app.applicantMemberId ? MOCK_BORROWER_PROFILES[app.applicantMemberId] : undefined);
+
+      const histories: LoanHistory[] = seededHistories.length > 0 ? seededHistories : (mockHistories ?? []);
+
+      const keyStats = computeKeyStats(histories, app.requestedAmount);
+      const chartData = computeChartData(histories);
+      const evidence = computeEvidence(histories);
+
+      let modelProvider = 'rule_based';
+      let modelRawResponse: object | null = null;
+      let riskLevel: LoanRiskLevel;
+      let recommendation: LoanRecommendationLabel;
+      let summary: string;
+
+      const geminiResult = await gemini.generate({
+        applicantName: app.applicantName,
+        applicantMemberId: app.applicantMemberId,
+        targetKoperasi: app.targetKoperasi,
+        requestedAmount: app.requestedAmount,
+        purpose: app.purpose,
+        tenureMonths: app.tenureMonths,
+        histories,
+        keyStats,
+      });
+
+      if (geminiResult) {
+        modelProvider = 'gemini';
+        modelRawResponse = geminiResult as object;
+        riskLevel = geminiResult.risk_level;
+        recommendation = geminiResult.recommendation;
+        summary = geminiResult.summary;
+      } else {
+        const fallback = ruleBasedRecommendation(keyStats);
+        riskLevel = fallback.riskLevel;
+        recommendation = fallback.recommendation;
+        summary = fallback.summary;
+      }
+
+      const saved = await repository.saveLoanRecommendation({
+        loanApplicationId: id,
+        riskLevel,
+        recommendation,
+        summary,
+        keyStatsJson: keyStats as unknown as import('../../../../shared/domain/json').InputJsonValue,
+        chartDataJson: chartData as unknown as import('../../../../shared/domain/json').InputJsonValue,
+        evidenceJson: evidence as unknown as import('../../../../shared/domain/json').InputJsonValue,
+        modelProvider,
+        modelRawResponse: modelRawResponse as unknown as import('../../../../shared/domain/json').InputJsonValue | null,
+      });
+
+      await repository.createLoanAuditLog({
+        userId,
+        action: 'loan_recommendation_generated',
+        targetId: id,
+        resultStatus: riskLevel,
+        metadataJson: {
+          applicant_name: app.applicantName,
+          target_koperasi: app.targetKoperasi,
+          model_provider: modelProvider,
+          risk_level: riskLevel,
+          recommendation,
+        },
+      });
+
+      return saved;
+    },
+
+    async getApplication(id: string) {
+      return repository.findLoanApplicationById(id);
+    },
+
+    async listApplications(status?: LoanStatus) {
+      return repository.findLoanApplications(status);
+    },
+
+    async approveApplication(id: string, reviewedBy: string, reviewNote: string | null) {
+      const app = await repository.updateLoanDecision({
+        id,
+        status: 'approved',
+        reviewedBy,
+        reviewNote,
+        reviewedAt: new Date(),
+      });
+      if (!app) return null;
+
+      await repository.createLoanAuditLog({
+        userId: reviewedBy,
+        action: 'loan_application_approved',
+        targetId: id,
+        resultStatus: 'approved',
+        metadataJson: {
+          applicant_name: app.applicantName,
+          target_koperasi: app.targetKoperasi,
+          review_note: reviewNote,
+        },
+      });
+
+      return app;
+    },
+
+    async rejectApplication(id: string, reviewedBy: string, reviewNote: string | null) {
+      const app = await repository.updateLoanDecision({
+        id,
+        status: 'rejected',
+        reviewedBy,
+        reviewNote,
+        reviewedAt: new Date(),
+      });
+      if (!app) return null;
+
+      await repository.createLoanAuditLog({
+        userId: reviewedBy,
+        action: 'loan_application_rejected',
+        targetId: id,
+        resultStatus: 'rejected',
+        metadataJson: {
+          applicant_name: app.applicantName,
+          target_koperasi: app.targetKoperasi,
+          review_note: reviewNote,
+        },
+      });
+
+      return app;
+    },
+  };
+}
+
+export type LoanUseCases = ReturnType<typeof createLoanUseCases>;

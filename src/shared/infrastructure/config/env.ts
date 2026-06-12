@@ -17,4 +17,5 @@ export const config = {
   port: Number(process.env.PORT ?? 3000),
   databaseUrl,
   jwtSecret,
+  geminiApiKey: process.env.GEMINI_API_KEY,
 };
