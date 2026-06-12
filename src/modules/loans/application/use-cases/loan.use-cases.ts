@@ -1,11 +1,15 @@
+import { createHash } from 'crypto';
 import type { GeminiLoanRecommendationClient } from '../../infrastructure/ai/gemini-loan-recommendation.client';
 import type { LoanRepository } from '../../domain/repositories/loan.repository';
 import type {
   CreateLoanApplicationInput,
+  LoanAuditReport,
   LoanChartData,
   LoanEvidence,
   LoanHistory,
+  LoanHistoryEntry,
   LoanHistoryResult,
+  LoanIntegrityResult,
   LoanKeyStats,
   LoanRecommendationLabel,
   LoanRiskLevel,
@@ -20,6 +24,43 @@ function getRecapStartDate(now = new Date()) {
   const start = new Date(now);
   start.setMonth(start.getMonth() - RECAP_PERIOD_MONTHS);
   return start;
+}
+
+function computeSuspiciousFlags(timeline: LoanHistoryEntry[]): LoanSuspiciousFlag[] {
+  const flags: LoanSuspiciousFlag[] = [];
+
+  const creationEntry = timeline.find((e) => e.action === 'loan_application_created');
+  const decisionEntry = timeline.find(
+    (e) => e.action === 'loan_application_approved' || e.action === 'loan_application_rejected',
+  );
+  const recommendationEntry = timeline.find((e) => e.action === 'loan_recommendation_generated');
+
+  if (decisionEntry && creationEntry) {
+    const elapsed = decisionEntry.created_at.getTime() - creationEntry.created_at.getTime();
+    if (elapsed < FAST_DECISION_THRESHOLD_MS) {
+      flags.push('FAST_DECISION');
+    }
+  }
+
+  if (decisionEntry && !recommendationEntry) {
+    flags.push('RECOMMENDATION_SKIPPED');
+  }
+
+  if (decisionEntry?.action === 'loan_application_approved') {
+    const riskLevel = recommendationEntry?.metadata?.risk_level;
+    if (riskLevel === 'high') {
+      flags.push('HIGH_RISK_APPROVED');
+    }
+  }
+
+  if (decisionEntry) {
+    const reviewNote = decisionEntry.metadata?.review_note;
+    if (!reviewNote || reviewNote.trim() === '') {
+      flags.push('MISSING_REVIEW_NOTE');
+    }
+  }
+
+  return flags;
 }
 
 function computeKeyStats(histories: LoanHistory[], requestedAmount: number, recapStart: Date, recapEnd: Date): LoanKeyStats {
@@ -287,50 +328,83 @@ export function createLoanUseCases(repository: LoanRepository, gemini: GeminiLoa
       if (!app) return null;
 
       const timeline = await repository.findLoanAuditHistory(id, from, to);
-
-      const flags: LoanSuspiciousFlag[] = [];
-
-      const creationEntry = timeline.find((e) => e.action === 'loan_application_created');
-      const decisionEntry = timeline.find(
-        (e) => e.action === 'loan_application_approved' || e.action === 'loan_application_rejected',
-      );
-      const recommendationEntry = timeline.find((e) => e.action === 'loan_recommendation_generated');
-
-      if (decisionEntry && creationEntry) {
-        const elapsed = decisionEntry.created_at.getTime() - creationEntry.created_at.getTime();
-        if (elapsed < FAST_DECISION_THRESHOLD_MS) {
-          flags.push('FAST_DECISION');
-        }
-      }
-
-      if (decisionEntry && !recommendationEntry) {
-        flags.push('RECOMMENDATION_SKIPPED');
-      }
-
-      if (decisionEntry?.action === 'loan_application_approved') {
-        const riskLevel = recommendationEntry?.metadata?.risk_level;
-        if (riskLevel === 'high') {
-          flags.push('HIGH_RISK_APPROVED');
-        }
-        const reviewNote = decisionEntry.metadata?.review_note;
-        if (!reviewNote || reviewNote.trim() === '') {
-          flags.push('MISSING_REVIEW_NOTE');
-        }
-      }
-
-      if (decisionEntry?.action === 'loan_application_rejected') {
-        const reviewNote = decisionEntry.metadata?.review_note;
-        if (!reviewNote || reviewNote.trim() === '') {
-          flags.push('MISSING_REVIEW_NOTE');
-        }
-      }
+      const chain = await repository.verifyLoanAuditChain(id);
 
       return {
         loan_application_id: id,
         generated_at: new Date().toISOString(),
-        flags,
+        flags: computeSuspiciousFlags(timeline),
+        integrity: {
+          loan_application_id: id,
+          ...chain,
+          verified_at: new Date().toISOString(),
+        },
         timeline,
       };
+    },
+
+    async verifyHistory(id: string): Promise<LoanIntegrityResult | null> {
+      const app = await repository.findLoanApplicationById(id);
+      if (!app) return null;
+
+      const chain = await repository.verifyLoanAuditChain(id);
+      return {
+        loan_application_id: id,
+        ...chain,
+        verified_at: new Date().toISOString(),
+      };
+    },
+
+    async exportHistoryReport(
+      id: string,
+      exportedBy: { id: string; name: string },
+      from?: Date,
+      to?: Date,
+    ): Promise<LoanAuditReport | null> {
+      const app = await repository.findLoanApplicationById(id);
+      if (!app) return null;
+
+      const timeline = await repository.findLoanAuditHistory(id, from, to);
+      const chain = await repository.verifyLoanAuditChain(id);
+      const generatedAt = new Date().toISOString();
+
+      const report: Omit<LoanAuditReport, 'report_hash'> = {
+        loan_application_id: id,
+        applicant_name: app.applicantName,
+        applicant_member_id: app.applicantMemberId,
+        target_koperasi: app.targetKoperasi,
+        requested_amount: app.requestedAmount,
+        status: app.status,
+        period_from: from?.toISOString() ?? null,
+        period_to: to?.toISOString() ?? null,
+        flags: computeSuspiciousFlags(timeline),
+        integrity: {
+          loan_application_id: id,
+          ...chain,
+          verified_at: generatedAt,
+        },
+        timeline,
+        generated_by: exportedBy.name,
+        generated_at: generatedAt,
+      };
+
+      const reportHash = createHash('sha256').update(JSON.stringify(report)).digest('hex');
+
+      await repository.createLoanAuditLog({
+        userId: exportedBy.id,
+        action: 'loan_audit_report_exported',
+        targetId: id,
+        resultStatus: 'exported',
+        metadataJson: {
+          applicant_name: app.applicantName,
+          target_koperasi: app.targetKoperasi,
+          period_from: report.period_from,
+          period_to: report.period_to,
+          report_hash: reportHash,
+        },
+      });
+
+      return { ...report, report_hash: reportHash };
     },
 
     async rejectApplication(

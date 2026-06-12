@@ -106,22 +106,55 @@ export type LoanHistoryEntryMetadata = {
   recap_period_months?: number;
   recap_start_date?: string | null;
   recap_end_date?: string | null;
+  period_from?: string | null;
+  period_to?: string | null;
+  report_hash?: string | null;
 };
 
 export type LoanHistoryEntry = {
   id: string;
   action: string;
   actor_user_id: string;
+  actor_name: string;
+  actor_role: string;
   result_status: string;
   metadata: LoanHistoryEntryMetadata;
+  self_hash: string | null;
   created_at: Date;
+};
+
+export type LoanIntegrityResult = {
+  loan_application_id: string;
+  integrity: 'valid' | 'broken';
+  checked_entries: number;
+  legacy_entries: number;
+  broken_at_entry_id: string | null;
+  verified_at: string;
 };
 
 export type LoanHistoryResult = {
   loan_application_id: string;
   generated_at: string;
   flags: LoanSuspiciousFlag[];
+  integrity: LoanIntegrityResult;
   timeline: LoanHistoryEntry[];
+};
+
+export type LoanAuditReport = {
+  loan_application_id: string;
+  applicant_name: string;
+  applicant_member_id: string | null;
+  target_koperasi: string;
+  requested_amount: number;
+  status: LoanStatus;
+  period_from: string | null;
+  period_to: string | null;
+  flags: LoanSuspiciousFlag[];
+  integrity: LoanIntegrityResult;
+  timeline: LoanHistoryEntry[];
+  generated_by: string;
+  generated_at: string;
+  report_hash: string;
 };
 
 export type GeminiLoanRecommendation = {
