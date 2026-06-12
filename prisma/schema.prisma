@@ -266,5 +266,9 @@ model TrAuditLog {
   targetId     String?
   resultStatus String
   metadataJson Json?
+  prevHash     String?
+  selfHash     String?
   createdAt    DateTime @default(now())
+
+  @@index([targetType, targetId])
 }
