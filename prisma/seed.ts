@@ -39,6 +39,16 @@ function daysAgo(days: number) {
   return date;
 }
 
+function currentPeriod() {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function firstDayOfCurrentMonth() {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+}
+
 async function upsertUser(input: {
   name: string;
   email: string;
@@ -63,6 +73,53 @@ async function upsertUser(input: {
       role: input.role,
       tenantId: input.tenantId,
       status: 'active',
+    },
+  });
+}
+
+async function upsertFundLedger(input: {
+  tenantId: string;
+  memberId: string;
+  fundType: 'principal' | 'monthly_dues';
+  periodKey: string;
+  amountDue: number;
+  amountPaid: number;
+  status: 'unpaid' | 'partial' | 'paid' | 'overdue';
+  dueDate: Date;
+  recordedBy: string;
+  note?: string;
+}) {
+  const paidAt = input.amountPaid > 0 ? daysAgo(2) : null;
+  await prisma.trFundLedger.upsert({
+    where: {
+      memberId_fundType_periodKey: {
+        memberId: input.memberId,
+        fundType: input.fundType,
+        periodKey: input.periodKey,
+      },
+    },
+    update: {
+      tenantId: input.tenantId,
+      amountDue: input.amountDue,
+      amountPaid: input.amountPaid,
+      status: input.status,
+      dueDate: input.dueDate,
+      paidAt,
+      recordedBy: input.amountPaid > 0 ? input.recordedBy : null,
+      note: input.note ?? null,
+    },
+    create: {
+      tenantId: input.tenantId,
+      memberId: input.memberId,
+      fundType: input.fundType,
+      periodKey: input.periodKey,
+      amountDue: input.amountDue,
+      amountPaid: input.amountPaid,
+      status: input.status,
+      dueDate: input.dueDate,
+      paidAt,
+      recordedBy: input.amountPaid > 0 ? input.recordedBy : null,
+      note: input.note ?? null,
     },
   });
 }
@@ -138,8 +195,8 @@ async function main() {
     { name: 'Bu Rina', email: 'bu.rina@example.com', username: 'bu_rina', koperasi: 'Tirta Bersama' },
   ];
 
-  const memberByUsername = new Map<string, { id: string; name: string }>();
-  memberByUsername.set('pak_hendra', hendra);
+  const memberByUsername = new Map<string, { id: string; name: string; tenantId: string }>();
+  memberByUsername.set('pak_hendra', { id: hendra.id, name: hendra.name, tenantId: harapanBaruTenantId });
   for (const member of memberUsers) {
     const tenantId = tenants.get(member.koperasi);
     if (!tenantId) continue;
@@ -150,10 +207,10 @@ async function main() {
       role: 'member',
       tenantId,
     });
-    memberByUsername.set(member.username, user);
+    memberByUsername.set(member.username, { id: user.id, name: user.name, tenantId });
   }
 
-  await upsertUser({
+  const primaryAdmin = await upsertUser({
     name: 'Primary Admin Harapan Baru',
     email: 'primary.harapanbaru@example.com',
     username: 'primary_harapanbaru',
@@ -161,13 +218,54 @@ async function main() {
     tenantId: harapanBaruTenantId,
   });
 
-  await upsertUser({
+  const secondaryAdmin = await upsertUser({
     name: 'Secondary Admin Nusantara',
     email: 'secondary.admin@example.com',
     username: 'secondary_admin',
     role: 'secondary_admin',
     tenantId: secondaryTenant.id,
   });
+
+  const periodKey = currentPeriod();
+  const monthlyDueDate = firstDayOfCurrentMonth();
+  const fundScenarios = [
+    { username: 'pak_hendra', principalPaid: 100000, monthlyPaid: 0, monthlyStatus: 'overdue' as const },
+    { username: 'bu_sari', principalPaid: 50000, monthlyPaid: 25000, monthlyStatus: 'paid' as const },
+    { username: 'pak_joko', principalPaid: 0, monthlyPaid: 0, monthlyStatus: 'overdue' as const },
+    { username: 'pak_acep', principalPaid: 100000, monthlyPaid: 25000, monthlyStatus: 'paid' as const },
+    { username: 'bu_rina', principalPaid: 100000, monthlyPaid: 10000, monthlyStatus: 'partial' as const },
+  ];
+
+  for (const scenario of fundScenarios) {
+    const member = memberByUsername.get(scenario.username);
+    if (!member) continue;
+
+    await upsertFundLedger({
+      tenantId: member.tenantId,
+      memberId: member.id,
+      fundType: 'principal',
+      periodKey: 'principal',
+      amountDue: 100000,
+      amountPaid: scenario.principalPaid,
+      status: scenario.principalPaid >= 100000 ? 'paid' : scenario.principalPaid > 0 ? 'partial' : 'overdue',
+      dueDate: monthsAgo(2),
+      recordedBy: primaryAdmin.id,
+      note: scenario.principalPaid >= 100000 ? 'Dana pokok lunas dari seed demo' : 'Dana pokok belum lunas',
+    });
+
+    await upsertFundLedger({
+      tenantId: member.tenantId,
+      memberId: member.id,
+      fundType: 'monthly_dues',
+      periodKey,
+      amountDue: 25000,
+      amountPaid: scenario.monthlyPaid,
+      status: scenario.monthlyStatus,
+      dueDate: monthlyDueDate,
+      recordedBy: member.tenantId === harapanBaruTenantId ? primaryAdmin.id : secondaryAdmin.id,
+      note: 'Iuran bulanan jatuh tempo setiap tanggal 1',
+    });
+  }
 
   const seedDevice = await prisma.msDevice.upsert({
     where: { deviceIdentifier: 'seed-device' },
@@ -378,6 +476,7 @@ async function main() {
   console.log('  secondary_admin: secondary_admin / secondary.admin@example.com');
   console.log('Seeded primary cooperatives:', primaryCooperatives.map((c) => c.name).join(', '));
   console.log('Seeded members: bu_sari, pak_joko (Harapan Baru), pak_acep (Padiwangi), bu_rina (Tirta Bersama).');
+  console.log('Seeded dana pokok and monthly iuran ledgers for current period:', periodKey);
   console.log('Seeded member activity records for tenant summaries.');
 }
 

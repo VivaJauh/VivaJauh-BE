@@ -3,6 +3,10 @@ import { createAuthUseCases } from '../../modules/auth/application/use-cases/aut
 import { prismaAuthRepository } from '../../modules/auth/infrastructure/repositories/prisma-auth.repository';
 import { createAuthControllers } from '../../modules/auth/presentation/controllers/auth.controller';
 import { createAuthRouter } from '../../modules/auth/presentation/routes/auth.routes';
+import { createFundUseCases } from '../../modules/funds/application/use-cases/fund.use-cases';
+import { prismaFundRepository } from '../../modules/funds/infrastructure/repositories/prisma-fund.repository';
+import { createFundControllers } from '../../modules/funds/presentation/controllers/fund.controller';
+import { createFundRouter } from '../../modules/funds/presentation/routes/fund.routes';
 import { createLoanUseCases } from '../../modules/loans/application/use-cases/loan.use-cases';
 import { createGeminiLoanRecommendationClient } from '../../modules/loans/infrastructure/ai/gemini-loan-recommendation.client';
 import { prismaLoanRepository } from '../../modules/loans/infrastructure/repositories/prisma-loan.repository';
@@ -36,6 +40,7 @@ const verificationUseCases = createVerificationUseCases(prismaVerificationReposi
 const geminiClient = createGeminiLoanRecommendationClient(config.geminiApiKey);
 const loanUseCases = createLoanUseCases(prismaLoanRepository, geminiClient);
 const tenantUseCases = createTenantUseCases(prismaTenantRepository);
+const fundUseCases = createFundUseCases(prismaFundRepository);
 
 apiRouter.use('/auth', createAuthRouter(createAuthControllers(authUseCases)));
 apiRouter.use('/sync', createSyncRouter(createSyncControllers(syncUseCases)));
@@ -43,3 +48,4 @@ apiRouter.use('/reports', createReportRouter(createReportControllers(reportUseCa
 apiRouter.use('/verification', createVerificationRouter(createVerificationControllers(verificationUseCases)));
 apiRouter.use('/loans', createLoanRouter(createLoanControllers(loanUseCases)));
 apiRouter.use('/tenants', createTenantRouter(createTenantControllers(tenantUseCases)));
+apiRouter.use('/funds', createFundRouter(createFundControllers(fundUseCases)));

@@ -41,6 +41,18 @@ enum LoanRiskLevel {
   high
 }
 
+enum FundType {
+  principal
+  monthly_dues
+}
+
+enum FundStatus {
+  unpaid
+  partial
+  paid
+  overdue
+}
+
 model MsUser {
   id        String   @id @default(uuid())
   username  String   @unique
@@ -64,6 +76,8 @@ model MsUser {
   loanRepayments      TrLoanRepayment[]
   sellerCredits       TrSellerCredit[]
   loanApplications    TrLoanApplication[]
+  fundLedgers         TrFundLedger[] @relation("FundLedgerMember")
+  recordedFundLedgers TrFundLedger[] @relation("FundLedgerRecorder")
 
   @@index([tenantId])
 }
@@ -79,6 +93,7 @@ model MsTenant {
 
   user    MsUser   @relation(fields: [userId], references: [id])
   members MsUser[] @relation("UserTenant")
+  funds   TrFundLedger[]
 
   @@index([userId])
   @@index([koperasiName])
@@ -256,6 +271,33 @@ model TrLoanRecommendation {
   createdAt         DateTime      @default(now())
 
   loanApplication TrLoanApplication @relation(fields: [loanApplicationId], references: [id])
+}
+
+model TrFundLedger {
+  id         String     @id @default(uuid())
+  tenantId   String
+  memberId   String
+  fundType   FundType
+  periodKey  String
+  amountDue  Float
+  amountPaid Float      @default(0)
+  status     FundStatus @default(unpaid)
+  dueDate    DateTime
+  paidAt     DateTime?
+  recordedBy String?
+  note       String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  tenant   MsTenant @relation(fields: [tenantId], references: [id])
+  member   MsUser   @relation("FundLedgerMember", fields: [memberId], references: [id])
+  recorder MsUser?  @relation("FundLedgerRecorder", fields: [recordedBy], references: [id])
+
+  @@unique([memberId, fundType, periodKey])
+  @@index([tenantId])
+  @@index([memberId])
+  @@index([fundType, periodKey])
+  @@index([status])
 }
 
 model TrAuditLog {
