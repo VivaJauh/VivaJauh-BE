@@ -1,7 +1,13 @@
 import { prisma } from '../../../../shared/infrastructure/persistence/prisma';
 import type { AuthRepository, AuthUser } from '../../domain/repositories/auth.repository';
 
-function toAuthUser(user: Awaited<ReturnType<typeof prisma.msUser.findFirst>>): AuthUser | null {
+type UserWithTenant = NonNullable<Awaited<ReturnType<typeof prisma.msUser.findFirst>>> & {
+  tenant: { id: string; koperasiName: string; koperasiType: string } | null;
+};
+
+const includeTenant = { tenant: true } as const;
+
+function toAuthUser(user: UserWithTenant | null): AuthUser | null {
   if (!user) return null;
   return {
     id: user.id,
@@ -10,26 +16,42 @@ function toAuthUser(user: Awaited<ReturnType<typeof prisma.msUser.findFirst>>): 
     name: user.name,
     email: user.email,
     role: user.role,
-    koperasiName: user.koperasiName,
+    tenantId: user.tenantId,
+    koperasiName: user.tenant?.koperasiName ?? null,
+    koperasiType: user.tenant?.koperasiType ?? null,
     status: user.status,
   };
 }
 
 export const prismaAuthRepository: AuthRepository = {
   async findExistingUser(username, email) {
-    return toAuthUser(await prisma.msUser.findFirst({ where: { OR: [{ username }, { email }] } }));
+    return toAuthUser(await prisma.msUser.findFirst({
+      where: { OR: [{ username }, { email }] },
+      include: includeTenant,
+    }));
   },
 
-  async createFieldOfficerUser(input) {
+  async findTenantByName(koperasiName) {
+    const tenant = await prisma.msTenant.findUnique({ where: { koperasiName } });
+    if (!tenant) return null;
+    return {
+      id: tenant.id,
+      koperasiName: tenant.koperasiName,
+      koperasiType: tenant.koperasiType,
+    };
+  },
+
+  async createRegisteredUser(input) {
     const user = await prisma.msUser.create({
       data: {
         username: input.username,
         password: input.password,
         name: input.name,
         email: input.email,
-        role: 'field_officer',
-        koperasiName: input.koperasiName,
+        role: 'member',
+        tenantId: input.tenantId,
       },
+      include: includeTenant,
     });
 
     return toAuthUser(user)!;
@@ -41,6 +63,7 @@ export const prismaAuthRepository: AuthRepository = {
         OR: [{ username: identifier }, { email: identifier }],
         status: 'active',
       },
+      include: includeTenant,
     }));
   },
 
