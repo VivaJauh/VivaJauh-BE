@@ -1,6 +1,6 @@
 import { Prisma } from '../../../../generated/prisma/client';
 import { prisma } from '../../../../shared/infrastructure/persistence/prisma';
-import type { LoanApplication, LoanHistory, LoanRecommendation, LoanStatus } from '../../application/dto/loan.dto';
+import type { LoanApplication, LoanHistory, LoanHistoryEntry, LoanHistoryEntryMetadata, LoanRecommendation, LoanStatus } from '../../application/dto/loan.dto';
 import type { CreateLoanApplicationRepositoryInput, LoanRepository, SaveLoanRecommendationInput } from '../../domain/repositories/loan.repository';
 
 type RawApplication = Awaited<ReturnType<typeof prisma.trLoanApplication.findFirst>> & {
@@ -153,11 +153,52 @@ export const prismaLoanRepository: LoanRepository = {
       data: {
         userId: input.userId,
         action: input.action,
-        targetType: 'TrLoanApplication',
+        targetType: 'LoanApplication',
         targetId: input.targetId,
         resultStatus: input.resultStatus,
         metadataJson: input.metadataJson as Prisma.InputJsonValue,
       },
+    });
+  },
+
+  async findLoanAuditHistory(loanApplicationId: string, from?: Date, to?: Date): Promise<LoanHistoryEntry[]> {
+    const logs = await prisma.trAuditLog.findMany({
+      where: {
+        targetType: 'LoanApplication',
+        targetId: loanApplicationId,
+        ...(from || to
+          ? {
+              createdAt: {
+                ...(from ? { gte: from } : {}),
+                ...(to ? { lte: to } : {}),
+              },
+            }
+          : {}),
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return logs.map((log) => {
+      const raw = (log.metadataJson ?? {}) as Record<string, unknown>;
+      const metadata: LoanHistoryEntryMetadata = {
+        applicant_name: typeof raw.applicant_name === 'string' ? raw.applicant_name : undefined,
+        applicant_member_id: typeof raw.applicant_member_id === 'string' ? raw.applicant_member_id : null,
+        target_koperasi: typeof raw.target_koperasi === 'string' ? raw.target_koperasi : undefined,
+        requested_amount: typeof raw.requested_amount === 'number' ? raw.requested_amount : undefined,
+        previous_status: typeof raw.previous_status === 'string' ? raw.previous_status : null,
+        new_status: typeof raw.new_status === 'string' ? raw.new_status : null,
+        risk_level: typeof raw.risk_level === 'string' ? raw.risk_level : null,
+        recommendation: typeof raw.recommendation === 'string' ? raw.recommendation : null,
+        review_note: typeof raw.review_note === 'string' ? raw.review_note : null,
+      };
+      return {
+        id: log.id,
+        action: log.action,
+        actor_user_id: log.userId,
+        result_status: log.resultStatus,
+        metadata,
+        created_at: log.createdAt,
+      };
     });
   },
 };

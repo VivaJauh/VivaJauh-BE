@@ -82,6 +82,40 @@ export type LoanApplication = {
   recommendation: LoanRecommendation | null;
 };
 
+export type LoanSuspiciousFlag =
+  | 'HIGH_RISK_APPROVED'
+  | 'MISSING_REVIEW_NOTE'
+  | 'FAST_DECISION'
+  | 'RECOMMENDATION_SKIPPED';
+
+export type LoanHistoryEntryMetadata = {
+  applicant_name?: string;
+  applicant_member_id?: string | null;
+  target_koperasi?: string;
+  requested_amount?: number;
+  previous_status?: string | null;
+  new_status?: string | null;
+  risk_level?: string | null;
+  recommendation?: string | null;
+  review_note?: string | null;
+};
+
+export type LoanHistoryEntry = {
+  id: string;
+  action: string;
+  actor_user_id: string;
+  result_status: string;
+  metadata: LoanHistoryEntryMetadata;
+  created_at: Date;
+};
+
+export type LoanHistoryResult = {
+  loan_application_id: string;
+  generated_at: string;
+  flags: LoanSuspiciousFlag[];
+  timeline: LoanHistoryEntry[];
+};
+
 export type GeminiLoanRecommendation = {
   risk_level: LoanRiskLevel;
   recommendation: LoanRecommendationLabel;

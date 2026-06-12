@@ -123,6 +123,26 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
       }
     },
 
+    async loanHistoryController(req: Request, res: Response, next: NextFunction) {
+      try {
+        if (req.user?.role !== 'remote_admin') {
+          fail(res, 'Forbidden', 403, 'FORBIDDEN');
+          return;
+        }
+        const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+        const from = req.query?.from ? new Date(req.query.from as string) : undefined;
+        const to = req.query?.to ? new Date(req.query.to as string) : undefined;
+        const result = await loanUseCases.getLoanHistory(id, from, to);
+        if (!result) {
+          fail(res, 'Loan application not found', 404, 'NOT_FOUND');
+          return;
+        }
+        ok(res, result);
+      } catch (error) {
+        next(error);
+      }
+    },
+
     async rejectApplicationController(req: Request, res: Response, next: NextFunction) {
       try {
         if (req.user?.role !== 'remote_admin') {

@@ -555,6 +555,36 @@ export const openApiDocument = {
         },
       },
     },
+    '/loans/{id}/history': {
+      get: {
+        tags: ['Loans'],
+        summary: 'Get loan audit history (remote_admin only)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'from', in: 'query', required: false, schema: { type: 'string', format: 'date-time' } },
+          { name: 'to', in: 'query', required: false, schema: { type: 'string', format: 'date-time' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Loan audit history with suspicious flags',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessResponse' },
+                    { type: 'object', properties: { data: { $ref: '#/components/schemas/LoanHistoryResult' } } },
+                  ],
+                },
+              },
+            },
+          },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+    },
     '/loans/{id}/recommendation': {
       post: {
         tags: ['Loans'],
@@ -1005,6 +1035,51 @@ export const openApiDocument = {
           evidence: { type: 'array', items: { type: 'object', additionalProperties: true } },
           model_provider: { type: 'string', example: 'gemini' },
         },
+      },
+      LoanHistoryEntryMetadata: {
+        type: 'object',
+        properties: {
+          applicant_name: { type: 'string' },
+          applicant_member_id: { type: 'string', nullable: true },
+          target_koperasi: { type: 'string' },
+          requested_amount: { type: 'number' },
+          previous_status: { type: 'string', nullable: true },
+          new_status: { type: 'string', nullable: true },
+          risk_level: { type: 'string', nullable: true },
+          recommendation: { type: 'string', nullable: true },
+          review_note: { type: 'string', nullable: true },
+        },
+      },
+      LoanHistoryEntry: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          action: { type: 'string' },
+          actor_user_id: { type: 'string' },
+          result_status: { type: 'string' },
+          metadata: { $ref: '#/components/schemas/LoanHistoryEntryMetadata' },
+          created_at: { type: 'string', format: 'date-time' },
+        },
+        required: ['id', 'action', 'actor_user_id', 'result_status', 'metadata', 'created_at'],
+      },
+      LoanHistoryResult: {
+        type: 'object',
+        properties: {
+          loan_application_id: { type: 'string' },
+          generated_at: { type: 'string', format: 'date-time' },
+          flags: {
+            type: 'array',
+            items: {
+              type: 'string',
+              enum: ['HIGH_RISK_APPROVED', 'MISSING_REVIEW_NOTE', 'FAST_DECISION', 'RECOMMENDATION_SKIPPED'],
+            },
+          },
+          timeline: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/LoanHistoryEntry' },
+          },
+        },
+        required: ['loan_application_id', 'generated_at', 'flags', 'timeline'],
       },
       LoanApplication: {
         type: 'object',

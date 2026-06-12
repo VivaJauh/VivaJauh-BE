@@ -9,6 +9,7 @@ export function createLoanRouter(controllers: LoanControllers) {
   loanRouter.post('/', controllers.createApplicationController);
   loanRouter.get('/', controllers.listApplicationsController);
   loanRouter.post('/:id/recommendation', controllers.generateRecommendationController);
+  loanRouter.get('/:id/history', controllers.loanHistoryController);
   loanRouter.patch('/:id/approve', controllers.approveApplicationController);
   loanRouter.patch('/:id/reject', controllers.rejectApplicationController);
   loanRouter.get('/:id', controllers.getApplicationController);

@@ -5,11 +5,15 @@ import type {
   LoanChartData,
   LoanEvidence,
   LoanHistory,
+  LoanHistoryResult,
   LoanKeyStats,
   LoanRecommendationLabel,
   LoanRiskLevel,
   LoanStatus,
+  LoanSuspiciousFlag,
 } from '../dto/loan.dto';
+
+const FAST_DECISION_THRESHOLD_MS = 30 * 60 * 1000;
 
 const MOCK_BORROWER_PROFILES: Record<string, LoanHistory[]> = {
   'Pak Acep': [
@@ -155,7 +159,10 @@ export function createLoanUseCases(repository: LoanRepository, gemini: GeminiLoa
         resultStatus: 'pending_review',
         metadataJson: {
           applicant_name: app.applicantName,
+          applicant_member_id: app.applicantMemberId ?? null,
           target_koperasi: app.targetKoperasi,
+          requested_amount: app.requestedAmount,
+          new_status: 'pending_review',
         },
       });
 
@@ -227,10 +234,12 @@ export function createLoanUseCases(repository: LoanRepository, gemini: GeminiLoa
         resultStatus: riskLevel,
         metadataJson: {
           applicant_name: app.applicantName,
+          applicant_member_id: app.applicantMemberId ?? null,
           target_koperasi: app.targetKoperasi,
-          model_provider: modelProvider,
+          requested_amount: app.requestedAmount,
           risk_level: riskLevel,
           recommendation,
+          model_provider: modelProvider,
         },
       });
 
@@ -262,12 +271,67 @@ export function createLoanUseCases(repository: LoanRepository, gemini: GeminiLoa
         resultStatus: 'approved',
         metadataJson: {
           applicant_name: app.applicantName,
+          applicant_member_id: app.applicantMemberId ?? null,
           target_koperasi: app.targetKoperasi,
+          requested_amount: app.requestedAmount,
+          previous_status: 'pending_review',
+          new_status: 'approved',
           review_note: reviewNote,
         },
       });
 
       return app;
+    },
+
+    async getLoanHistory(id: string, from?: Date, to?: Date): Promise<LoanHistoryResult | null> {
+      const app = await repository.findLoanApplicationById(id);
+      if (!app) return null;
+
+      const timeline = await repository.findLoanAuditHistory(id, from, to);
+
+      const flags: LoanSuspiciousFlag[] = [];
+
+      const creationEntry = timeline.find((e) => e.action === 'loan_application_created');
+      const decisionEntry = timeline.find(
+        (e) => e.action === 'loan_application_approved' || e.action === 'loan_application_rejected',
+      );
+      const recommendationEntry = timeline.find((e) => e.action === 'loan_recommendation_generated');
+
+      if (decisionEntry && creationEntry) {
+        const elapsed = decisionEntry.created_at.getTime() - creationEntry.created_at.getTime();
+        if (elapsed < FAST_DECISION_THRESHOLD_MS) {
+          flags.push('FAST_DECISION');
+        }
+      }
+
+      if (decisionEntry && !recommendationEntry) {
+        flags.push('RECOMMENDATION_SKIPPED');
+      }
+
+      if (decisionEntry?.action === 'loan_application_approved') {
+        const riskLevel = recommendationEntry?.metadata?.risk_level;
+        if (riskLevel === 'high') {
+          flags.push('HIGH_RISK_APPROVED');
+        }
+        const reviewNote = decisionEntry.metadata?.review_note;
+        if (!reviewNote || reviewNote.trim() === '') {
+          flags.push('MISSING_REVIEW_NOTE');
+        }
+      }
+
+      if (decisionEntry?.action === 'loan_application_rejected') {
+        const reviewNote = decisionEntry.metadata?.review_note;
+        if (!reviewNote || reviewNote.trim() === '') {
+          flags.push('MISSING_REVIEW_NOTE');
+        }
+      }
+
+      return {
+        loan_application_id: id,
+        generated_at: new Date().toISOString(),
+        flags,
+        timeline,
+      };
     },
 
     async rejectApplication(id: string, reviewedBy: string, reviewNote: string | null) {
@@ -287,7 +351,11 @@ export function createLoanUseCases(repository: LoanRepository, gemini: GeminiLoa
         resultStatus: 'rejected',
         metadataJson: {
           applicant_name: app.applicantName,
+          applicant_member_id: app.applicantMemberId ?? null,
           target_koperasi: app.targetKoperasi,
+          requested_amount: app.requestedAmount,
+          previous_status: 'pending_review',
+          new_status: 'rejected',
           review_note: reviewNote,
         },
       });

@@ -1,5 +1,5 @@
 import type { InputJsonValue } from '../../../../shared/domain/json';
-import type { LoanApplication, LoanHistory, LoanRecommendation, LoanRiskLevel, LoanStatus } from '../../application/dto/loan.dto';
+import type { LoanApplication, LoanHistory, LoanHistoryEntry, LoanRecommendation, LoanRiskLevel, LoanStatus } from '../../application/dto/loan.dto';
 
 export type CreateLoanApplicationRepositoryInput = {
   applicantName: string;
@@ -31,4 +31,5 @@ export type LoanRepository = {
   saveLoanRecommendation(input: SaveLoanRecommendationInput): Promise<LoanRecommendation>;
   updateLoanDecision(input: { id: string; status: 'approved' | 'rejected'; reviewedBy: string; reviewNote: string | null; reviewedAt: Date }): Promise<LoanApplication | null>;
   createLoanAuditLog(input: { userId: string; action: string; targetId: string; resultStatus: string; metadataJson: InputJsonValue }): Promise<void>;
+  findLoanAuditHistory(loanApplicationId: string, from?: Date, to?: Date): Promise<LoanHistoryEntry[]>;
 };
