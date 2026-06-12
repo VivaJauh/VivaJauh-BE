@@ -1,7 +1,99 @@
 import type { NextFunction, Request, Response } from 'express';
+import PDFDocument from 'pdfkit';
 import { fail, ok } from '../../../../shared/presentation/http/response';
-import type { LoanStatus } from '../../application/dto/loan.dto';
+import type { LoanAuditReport, LoanStatus } from '../../application/dto/loan.dto';
 import type { LoanUseCases } from '../../application/use-cases/loan.use-cases';
+
+const AUDIT_ACTION_LABELS: Record<string, string> = {
+  loan_application_created: 'Pengajuan dibuat',
+  loan_recommendation_generated: 'Rekomendasi risiko dihasilkan',
+  loan_application_approved: 'Pengajuan disetujui',
+  loan_application_rejected: 'Pengajuan ditolak',
+  loan_audit_report_exported: 'Laporan pemeriksaan diekspor',
+};
+
+const FLAG_LABELS: Record<string, string> = {
+  FAST_DECISION: 'Keputusan dibuat kurang dari 30 menit setelah pengajuan',
+  RECOMMENDATION_SKIPPED: 'Keputusan dibuat tanpa rekomendasi risiko',
+  HIGH_RISK_APPROVED: 'Pengajuan berisiko tinggi disetujui',
+  MISSING_REVIEW_NOTE: 'Catatan keputusan kosong',
+};
+
+function maskMemberId(value: string | null): string {
+  if (!value) return '-';
+  if (value.length <= 4) return `${value[0]}***`;
+  return `${value.slice(0, 3)}${'*'.repeat(value.length - 5)}${value.slice(-2)}`;
+}
+
+function formatDateTime(value: Date | string): string {
+  const date = typeof value === 'string' ? new Date(value) : value;
+  return date.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Jakarta' });
+}
+
+function renderAuditReportPdf(res: Response, report: LoanAuditReport) {
+  const doc = new PDFDocument({ margin: 48, size: 'A4' });
+  doc.pipe(res);
+
+  doc.fontSize(16).font('Helvetica-Bold').text('LAPORAN PEMERIKSAAN PINJAMAN');
+  doc.fontSize(10).font('Helvetica').fillColor('#555555')
+    .text('Diterbitkan oleh Koperasi Sekunder melalui sistem VivaJauh');
+  doc.moveDown();
+
+  doc.fillColor('#000000').fontSize(11).font('Helvetica-Bold').text('Identitas Kasus');
+  doc.fontSize(10).font('Helvetica');
+  doc.text(`ID Pengajuan      : ${report.loan_application_id}`);
+  doc.text(`Pemohon           : ${report.applicant_name}`);
+  doc.text(`NIK / ID Anggota  : ${maskMemberId(report.applicant_member_id)}`);
+  doc.text(`Koperasi Tujuan   : ${report.target_koperasi}`);
+  doc.text(`Nominal           : Rp ${report.requested_amount.toLocaleString('id-ID')}`);
+  doc.text(`Status            : ${report.status}`);
+  doc.text(
+    `Periode Pemeriksaan: ${report.period_from ? formatDateTime(report.period_from) : 'awal'} s.d. ${
+      report.period_to ? formatDateTime(report.period_to) : 'sekarang'
+    }`,
+  );
+  doc.moveDown();
+
+  doc.fontSize(11).font('Helvetica-Bold').text('Integritas Rantai Audit');
+  doc.fontSize(10).font('Helvetica');
+  const integrityLabel = report.integrity.integrity === 'valid' ? 'VALID — tidak ada indikasi manipulasi' : `RUSAK pada entri ${report.integrity.broken_at_entry_id}`;
+  doc.fillColor(report.integrity.integrity === 'valid' ? '#1A7F4B' : '#B3261E').text(integrityLabel);
+  doc.fillColor('#000000').text(`Entri terverifikasi: ${report.integrity.checked_entries}`);
+  doc.moveDown();
+
+  doc.fontSize(11).font('Helvetica-Bold').text('Penanda Otomatis');
+  doc.fontSize(10).font('Helvetica');
+  if (report.flags.length === 0) {
+    doc.text('Tidak ada pola mencurigakan yang terdeteksi.');
+  } else {
+    for (const flag of report.flags) {
+      doc.fillColor('#B3261E').text(`• ${FLAG_LABELS[flag] ?? flag}`);
+    }
+    doc.fillColor('#000000');
+  }
+  doc.moveDown();
+
+  doc.fontSize(11).font('Helvetica-Bold').text('Kronologi');
+  doc.fontSize(9.5).font('Helvetica');
+  for (const entry of report.timeline) {
+    doc.text(
+      `${formatDateTime(entry.created_at)} — ${AUDIT_ACTION_LABELS[entry.action] ?? entry.action} — oleh ${entry.actor_name} (${entry.actor_role})${
+        entry.metadata.review_note ? ` — catatan: "${entry.metadata.review_note}"` : ''
+      }`,
+    );
+  }
+  doc.moveDown(2);
+
+  doc.fontSize(8.5).fillColor('#555555');
+  doc.text(`Dibuat oleh ${report.generated_by} pada ${formatDateTime(report.generated_at)}.`);
+  doc.text(`SHA-256 laporan: ${report.report_hash}`);
+  doc.text(
+    'Dokumen ini diterbitkan tanpa memberikan akses sistem kepada pemeriksa. '
+    + 'Keaslian isi dapat diverifikasi dengan mencocokkan hash di atas pada jejak audit sistem.',
+  );
+
+  doc.end();
+}
 
 function redactEvidence(evidence: unknown): unknown {
   if (!Array.isArray(evidence)) return [];
@@ -173,6 +265,54 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
           return;
         }
         ok(res, result);
+      } catch (error) {
+        next(error);
+      }
+    },
+
+    async verifyLoanHistoryController(req: Request, res: Response, next: NextFunction) {
+      try {
+        if (req.user?.role !== 'secondary_admin') {
+          fail(res, 'Forbidden', 403, 'FORBIDDEN');
+          return;
+        }
+        const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+        const result = await loanUseCases.verifyHistory(id);
+        if (!result) {
+          fail(res, 'Loan application not found', 404, 'NOT_FOUND');
+          return;
+        }
+        ok(res, result);
+      } catch (error) {
+        next(error);
+      }
+    },
+
+    async exportLoanHistoryController(req: Request, res: Response, next: NextFunction) {
+      try {
+        if (req.user?.role !== 'secondary_admin') {
+          fail(res, 'Forbidden', 403, 'FORBIDDEN');
+          return;
+        }
+        const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+        const from = req.query?.from ? new Date(req.query.from as string) : undefined;
+        const to = req.query?.to ? new Date(req.query.to as string) : undefined;
+        const report = await loanUseCases.exportHistoryReport(
+          id,
+          { id: req.user.sub, name: req.user.name },
+          from,
+          to,
+        );
+        if (!report) {
+          fail(res, 'Loan application not found', 404, 'NOT_FOUND');
+          return;
+        }
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="laporan-audit-${report.loan_application_id}.pdf"`,
+        );
+        renderAuditReportPdf(res, report);
       } catch (error) {
         next(error);
       }
