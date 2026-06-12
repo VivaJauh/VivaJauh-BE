@@ -1,4 +1,4 @@
-import type { JwtUser } from './auth';
+import type { JwtUser } from '../shared/domain/auth';
 
 declare global {
   namespace Express {

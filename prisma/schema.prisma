@@ -39,12 +39,26 @@ model MsUser {
   updatedAt DateTime @updatedAt
 
   devices             MsDevice[]
+  tenants             MsTenant[]
   records             TrSyncRecord[]
   feedTransactions    TrFeedTransaction[]
   livestockEvents     TrLivestockEvent[]
   savingsTransactions TrSavingsTransaction[]
   loanRepayments      TrLoanRepayment[]
   sellerCredits       TrSellerCredit[]
+}
+
+model MsTenant {
+  id           String   @id @default(uuid())
+  userId       String
+  koperasiName String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user MsUser @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([koperasiName])
 }
 
 model MsDevice {

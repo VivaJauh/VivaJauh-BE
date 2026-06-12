@@ -46,3 +46,5 @@ npm run db:seed
 ```bash
 npm run dev
 ```
+
+Swagger documentation at `/docs`.
