@@ -12,8 +12,42 @@ export type IncomingSyncItem = {
   recorded_at?: string;
 };
 
+export type SyncedRecord = {
+  id: string;
+  _id: string;
+  local_id: string;
+  user_id: string;
+  device_id: string;
+  record_type: string;
+  payload_json: Prisma.JsonValue;
+  sync_status: 'pending' | 'syncing' | 'synced' | 'failed' | 'conflict';
+  verification_status: 'unverified' | 'verified' | 'rejected' | 'needs_correction';
+  idempotency_key: string;
+  recorded_at: string;
+  uploaded_at: string | null;
+  error_message: string | null;
+};
+
 function toJsonValue(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value ?? {})) as Prisma.InputJsonValue;
+}
+
+function toApiRecord(record: TrSyncRecord): SyncedRecord {
+  return {
+    id: record.id,
+    _id: record.id,
+    local_id: record.localId,
+    user_id: record.userId,
+    device_id: record.deviceId,
+    record_type: record.recordType,
+    payload_json: record.payloadJson,
+    sync_status: record.syncStatus,
+    verification_status: record.verificationStatus,
+    idempotency_key: record.idempotencyKey,
+    recorded_at: record.recordedAt.toISOString(),
+    uploaded_at: record.uploadedAt?.toISOString() ?? null,
+    error_message: record.errorMessage,
+  };
 }
 
 function syncResult(localId: string, record: TrSyncRecord) {
@@ -138,6 +172,14 @@ export async function projectRecord(record: TrSyncRecord) {
   }
 }
 
+export async function allRecords() {
+  const records = await prisma.trSyncRecord.findMany({
+    orderBy: { uploadedAt: 'asc' },
+  });
+
+  return records.map(toApiRecord);
+}
+
 export async function syncBatch(user: JwtUser, items: IncomingSyncItem[]) {
   const results = [];
 
@@ -191,4 +233,21 @@ export async function syncBatch(user: JwtUser, items: IncomingSyncItem[]) {
   }
 
   return results;
+}
+
+export async function syncStatus() {
+  const records = await allRecords();
+  return {
+    pending: records.filter((record) => record.sync_status === 'pending').length,
+    synced: records.filter((record) => record.sync_status === 'synced').length,
+    failed: records.filter((record) => record.sync_status === 'failed').length,
+    conflict: records.filter((record) => record.sync_status === 'conflict').length,
+    unverified: records.filter((record) => record.verification_status === 'unverified').length,
+    verified: records.filter((record) => record.verification_status === 'verified').length,
+    lastSyncAt: records.at(-1)?.uploaded_at ?? null,
+  };
+}
+
+export async function syncItems() {
+  return allRecords();
 }
