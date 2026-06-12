@@ -21,6 +21,7 @@ cp .env.example .env
 PORT=3000
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/vivajauh
 JWT_SECRET=change-this-for-local-dev
+GEMINI_API_KEY=
 ```
 
 4. Generate Prisma client:
