@@ -1,6 +1,7 @@
 import cors from 'cors';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { config } from './config/env';
+import { apiRouter } from './routes';
 import { fail, ok } from './utils/response';
 
 const app = express();
@@ -11,6 +12,8 @@ app.use(express.json({ limit: '2mb' }));
 app.get('/health', (_req, res) => {
   ok(res, { status: 'ok', service: 'VivaJauh API', timestamp: new Date().toISOString() });
 });
+
+app.use('/api/v1', apiRouter);
 
 app.use((_req, res) => {
   fail(res, 'Endpoint not found', 404, 'NOT_FOUND');
