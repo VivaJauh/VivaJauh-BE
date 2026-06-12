@@ -15,6 +15,10 @@ app.get('/health', (_req, res) => {
   ok(res, { status: 'ok', service: 'VivaJauh API', timestamp: new Date().toISOString() });
 });
 
+app.get('/', (_req, res) => {
+  ok(res, { status: 'ok', service: 'VivaJauh API', timestamp: new Date().toISOString() });
+});
+
 app.get('/openapi.json', (_req, res) => {
   res.json(openApiDocument);
 });
