@@ -139,7 +139,12 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
         }
         const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
         const reviewNote = typeof req.body?.review_note === 'string' ? req.body.review_note : null;
-        const app = await loanUseCases.approveApplication(id, req.user.sub, reviewNote);
+        const app = await loanUseCases.approveApplication(
+          id,
+          req.user.sub,
+          reviewNote,
+          req.user.koperasi_name ?? null,
+        );
         if (!app) {
           fail(res, 'Loan application not found', 404, 'NOT_FOUND');
           return;
@@ -148,6 +153,10 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
       } catch (error) {
         if (error instanceof Error && error.message.startsWith('INVALID_STATE:')) {
           fail(res, error.message.replace('INVALID_STATE: ', ''), 409, 'CONFLICT');
+          return;
+        }
+        if (error instanceof Error && error.message.startsWith('FORBIDDEN_SCOPE:')) {
+          fail(res, error.message.replace('FORBIDDEN_SCOPE: ', ''), 403, 'FORBIDDEN');
           return;
         }
         next(error);
@@ -182,7 +191,12 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
         }
         const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
         const reviewNote = typeof req.body?.review_note === 'string' ? req.body.review_note : null;
-        const app = await loanUseCases.rejectApplication(id, req.user.sub, reviewNote);
+        const app = await loanUseCases.rejectApplication(
+          id,
+          req.user.sub,
+          reviewNote,
+          req.user.koperasi_name ?? null,
+        );
         if (!app) {
           fail(res, 'Loan application not found', 404, 'NOT_FOUND');
           return;
@@ -191,6 +205,10 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
       } catch (error) {
         if (error instanceof Error && error.message.startsWith('INVALID_STATE:')) {
           fail(res, error.message.replace('INVALID_STATE: ', ''), 409, 'CONFLICT');
+          return;
+        }
+        if (error instanceof Error && error.message.startsWith('FORBIDDEN_SCOPE:')) {
+          fail(res, error.message.replace('FORBIDDEN_SCOPE: ', ''), 403, 'FORBIDDEN');
           return;
         }
         next(error);

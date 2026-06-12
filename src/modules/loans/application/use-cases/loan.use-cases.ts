@@ -226,11 +226,19 @@ export function createLoanUseCases(repository: LoanRepository, gemini: GeminiLoa
       return repository.findLoanApplications(status);
     },
 
-    async approveApplication(id: string, reviewedBy: string, reviewNote: string | null) {
+    async approveApplication(
+      id: string,
+      reviewedBy: string,
+      reviewNote: string | null,
+      reviewerKoperasi: string | null,
+    ) {
       const existing = await repository.findLoanApplicationById(id);
       if (!existing) return null;
       if (existing.status !== 'pending_review') {
         throw new Error(`INVALID_STATE: application has already been ${existing.status}`);
+      }
+      if (reviewerKoperasi !== existing.targetKoperasi) {
+        throw new Error(`FORBIDDEN_SCOPE: only pengurus of ${existing.targetKoperasi} can decide this application`);
       }
 
       const app = await repository.updateLoanDecision({
@@ -312,11 +320,19 @@ export function createLoanUseCases(repository: LoanRepository, gemini: GeminiLoa
       };
     },
 
-    async rejectApplication(id: string, reviewedBy: string, reviewNote: string | null) {
+    async rejectApplication(
+      id: string,
+      reviewedBy: string,
+      reviewNote: string | null,
+      reviewerKoperasi: string | null,
+    ) {
       const existing = await repository.findLoanApplicationById(id);
       if (!existing) return null;
       if (existing.status !== 'pending_review') {
         throw new Error(`INVALID_STATE: application has already been ${existing.status}`);
+      }
+      if (reviewerKoperasi !== existing.targetKoperasi) {
+        throw new Error(`FORBIDDEN_SCOPE: only pengurus of ${existing.targetKoperasi} can decide this application`);
       }
 
       const app = await repository.updateLoanDecision({
