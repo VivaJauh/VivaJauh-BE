@@ -3,7 +3,50 @@ import { fail, ok } from '../../../../shared/presentation/http/response';
 import type { LoanStatus } from '../../application/dto/loan.dto';
 import type { LoanUseCases } from '../../application/use-cases/loan.use-cases';
 
-function toApiApplication(app: NonNullable<Awaited<ReturnType<LoanUseCases['getApplication']>>>) {
+function redactEvidence(evidence: unknown): unknown {
+  if (!Array.isArray(evidence)) return [];
+  return evidence.map((item, index) => {
+    const e = (item ?? {}) as Record<string, unknown>;
+    const arrears = typeof e.outstanding_arrears === 'number' ? e.outstanding_arrears : 0;
+    const late = typeof e.late_payments === 'number' ? e.late_payments : 0;
+    return {
+      koperasi: `Koperasi ${String.fromCharCode(65 + index)}`,
+      finding:
+        arrears > 0
+          ? 'Terdapat tunggakan yang belum diselesaikan di koperasi lain'
+          : late > 0
+            ? 'Terdapat riwayat keterlambatan pembayaran'
+            : 'Riwayat pembayaran lancar',
+      status: typeof e.status === 'string' ? e.status : 'unknown',
+    };
+  });
+}
+
+function redactChartData(chartData: unknown): unknown {
+  const c = (chartData ?? {}) as Record<string, unknown>;
+  return { risk_factors: Array.isArray(c.risk_factors) ? c.risk_factors : [] };
+}
+
+function toApiRecommendation(
+  rec: NonNullable<NonNullable<Awaited<ReturnType<LoanUseCases['getApplication']>>>['recommendation']>,
+  redact: boolean,
+) {
+  return {
+    loan_application_id: rec.loanApplicationId,
+    risk_level: rec.riskLevel,
+    recommendation: rec.recommendation,
+    summary: rec.summary,
+    key_stats: rec.keyStatsJson,
+    chart_data: redact ? redactChartData(rec.chartDataJson) : rec.chartDataJson,
+    evidence: redact ? redactEvidence(rec.evidenceJson) : rec.evidenceJson,
+    model_provider: rec.modelProvider,
+  };
+}
+
+function toApiApplication(
+  app: NonNullable<Awaited<ReturnType<LoanUseCases['getApplication']>>>,
+  redact: boolean,
+) {
   return {
     id: app.id,
     applicant_name: app.applicantName,
@@ -19,19 +62,12 @@ function toApiApplication(app: NonNullable<Awaited<ReturnType<LoanUseCases['getA
     review_note: app.reviewNote,
     created_at: app.createdAt,
     updated_at: app.updatedAt,
-    recommendation: app.recommendation
-      ? {
-          loan_application_id: app.recommendation.loanApplicationId,
-          risk_level: app.recommendation.riskLevel,
-          recommendation: app.recommendation.recommendation,
-          summary: app.recommendation.summary,
-          key_stats: app.recommendation.keyStatsJson,
-          chart_data: app.recommendation.chartDataJson,
-          evidence: app.recommendation.evidenceJson,
-          model_provider: app.recommendation.modelProvider,
-        }
-      : null,
+    recommendation: app.recommendation ? toApiRecommendation(app.recommendation, redact) : null,
   };
+}
+
+function isAdmin(req: Request): boolean {
+  return req.user?.role === 'remote_admin';
 }
 
 export function createLoanControllers(loanUseCases: LoanUseCases) {
@@ -47,7 +83,7 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
           tenureMonths: req.body?.tenure_months,
           submittedBy: req.user!.sub,
         });
-        ok(res, toApiApplication(app), 201);
+        ok(res, toApiApplication(app, !isAdmin(req)), 201);
       } catch (error) {
         if (error instanceof Error && error.message.startsWith('INVALID_INPUT:')) {
           fail(res, error.message.replace('INVALID_INPUT: ', ''), 400, 'BAD_REQUEST');
@@ -65,16 +101,7 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
           fail(res, 'Loan application not found', 404, 'NOT_FOUND');
           return;
         }
-        ok(res, {
-          loan_application_id: result.loanApplicationId,
-          risk_level: result.riskLevel,
-          recommendation: result.recommendation,
-          summary: result.summary,
-          key_stats: result.keyStatsJson,
-          chart_data: result.chartDataJson,
-          evidence: result.evidenceJson,
-          model_provider: result.modelProvider,
-        });
+        ok(res, toApiRecommendation(result, !isAdmin(req)));
       } catch (error) {
         next(error);
       }
@@ -88,7 +115,7 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
           fail(res, 'Loan application not found', 404, 'NOT_FOUND');
           return;
         }
-        ok(res, toApiApplication(app));
+        ok(res, toApiApplication(app, !isAdmin(req)));
       } catch (error) {
         next(error);
       }
@@ -98,7 +125,7 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
       try {
         const status = req.query?.status as LoanStatus | undefined;
         const apps = await loanUseCases.listApplications(status);
-        ok(res, apps.map(toApiApplication));
+        ok(res, apps.map((app) => toApiApplication(app, !isAdmin(req))));
       } catch (error) {
         next(error);
       }
@@ -117,8 +144,12 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
           fail(res, 'Loan application not found', 404, 'NOT_FOUND');
           return;
         }
-        ok(res, toApiApplication(app));
+        ok(res, toApiApplication(app, false));
       } catch (error) {
+        if (error instanceof Error && error.message.startsWith('INVALID_STATE:')) {
+          fail(res, error.message.replace('INVALID_STATE: ', ''), 409, 'CONFLICT');
+          return;
+        }
         next(error);
       }
     },
@@ -156,8 +187,12 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
           fail(res, 'Loan application not found', 404, 'NOT_FOUND');
           return;
         }
-        ok(res, toApiApplication(app));
+        ok(res, toApiApplication(app, false));
       } catch (error) {
+        if (error instanceof Error && error.message.startsWith('INVALID_STATE:')) {
+          fail(res, error.message.replace('INVALID_STATE: ', ''), 409, 'CONFLICT');
+          return;
+        }
         next(error);
       }
     },
