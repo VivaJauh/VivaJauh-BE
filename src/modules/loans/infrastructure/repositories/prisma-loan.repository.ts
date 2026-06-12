@@ -81,27 +81,36 @@ export const prismaLoanRepository: LoanRepository = {
   },
 
   async findBorrowerHistories(applicantName: string, applicantMemberId: string | null): Promise<LoanHistory[]> {
-    const where: Prisma.TrSyncRecordWhereInput = {
-      recordType: 'loan_history',
-      OR: [
-        { payloadJson: { path: ['member_name'], equals: applicantName } },
-        ...(applicantMemberId ? [{ payloadJson: { path: ['member_id'], equals: applicantMemberId } }] : []),
-      ],
-    };
-
-    const records = await prisma.trSyncRecord.findMany({ where });
-
-    return records.map((r) => {
-      const p = (r.payloadJson ?? {}) as Record<string, unknown>;
-      return {
-        koperasi: typeof p.koperasi === 'string' ? p.koperasi : '',
-        loanRef: typeof p.loan_ref === 'string' ? p.loan_ref : null,
-        status: typeof p.status === 'string' ? p.status : 'unknown',
-        totalRepaid: typeof p.total_repaid === 'number' ? p.total_repaid : 0,
-        latePayments: typeof p.late_payments === 'number' ? p.late_payments : 0,
-        outstandingArrears: typeof p.outstanding_arrears === 'number' ? p.outstanding_arrears : 0,
-      };
+    const records = await prisma.trSyncRecord.findMany({
+      where: { recordType: 'loan_history' },
     });
+
+    const normalize = (v: unknown) =>
+      typeof v === 'string' ? v.trim().toLowerCase().replace(/\s+/g, ' ') : '';
+    const targetName = normalize(applicantName);
+    const targetMemberId = normalize(applicantMemberId);
+
+    const withPayload = records.map((r) => ({
+      payload: (r.payloadJson ?? {}) as Record<string, unknown>,
+    }));
+
+    const byMemberId = targetMemberId
+      ? withPayload.filter(({ payload }) => normalize(payload.member_id) === targetMemberId)
+      : [];
+
+    const matched =
+      byMemberId.length > 0
+        ? byMemberId
+        : withPayload.filter(({ payload }) => normalize(payload.member_name) === targetName);
+
+    return matched.map(({ payload: p }) => ({
+      koperasi: typeof p.koperasi === 'string' ? p.koperasi : '',
+      loanRef: typeof p.loan_ref === 'string' ? p.loan_ref : null,
+      status: typeof p.status === 'string' ? p.status : 'unknown',
+      totalRepaid: typeof p.total_repaid === 'number' ? p.total_repaid : 0,
+      latePayments: typeof p.late_payments === 'number' ? p.late_payments : 0,
+      outstandingArrears: typeof p.outstanding_arrears === 'number' ? p.outstanding_arrears : 0,
+    }));
   },
 
   async saveLoanRecommendation(input: SaveLoanRecommendationInput): Promise<LoanRecommendation> {
