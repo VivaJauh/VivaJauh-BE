@@ -27,7 +27,7 @@ const users = [
 
 const cooperatives = ['Padiwangi', 'Melati Jaya', 'Sumber Makmur', 'Tirta Bersama', 'Harapan Baru'];
 
-const pakAcepHistories = [
+const loanHistories = [
   {
     koperasi: 'Padiwangi',
     loan_ref: 'PDW-Acep-001',
@@ -57,6 +57,26 @@ const pakAcepHistories = [
     total_repaid: 1800000,
     late_payments: 1,
     outstanding_arrears: 250000,
+  },
+  {
+    koperasi: 'Padiwangi',
+    loan_ref: 'PDW-Hendra-001',
+    status: 'good_history',
+    member_name: 'Pak Hendra',
+    member_id: 'Hendra-001',
+    total_repaid: 4200000,
+    late_payments: 0,
+    outstanding_arrears: 0,
+  },
+  {
+    koperasi: 'Tirta Bersama',
+    loan_ref: 'TRB-Hendra-001',
+    status: 'minor_arrears',
+    member_name: 'Pak Hendra',
+    member_id: 'Hendra-001',
+    total_repaid: 1500000,
+    late_payments: 1,
+    outstanding_arrears: 200000,
   },
 ];
 
@@ -115,7 +135,7 @@ async function main() {
     }
   }
 
-  for (const history of pakAcepHistories) {
+  for (const history of loanHistories) {
     const idempotencyKey = `loan_history-${history.member_id}-${history.loan_ref}`;
     const existing = await prisma.trSyncRecord.findUnique({ where: { idempotencyKey } });
     if (!existing) {
@@ -138,7 +158,7 @@ async function main() {
 
   console.log('Seeded local users. Password: password123');
   console.log('Seeded cooperatives:', cooperatives.join(', '));
-  console.log('Seeded Pak Acep cross-cooperative loan histories.');
+  console.log('Seeded cross-cooperative loan histories for Pak Acep and Pak Hendra.');
 }
 
 main()
