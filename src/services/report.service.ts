@@ -1,3 +1,4 @@
+import { prisma } from '../config/prisma';
 import { Prisma } from '../generated/prisma/client';
 import { allRecords } from './sync.service';
 
@@ -53,4 +54,33 @@ export async function portfolioPack() {
     feed_movement_kg: feed.reduce((sum, record) => sum + numberFromPayload(record.payload_json, 'quantity'), 0),
     report_consistency_score: verified.length === 0 ? 0 : Math.min(100, verified.length * 10),
   };
+}
+
+export async function conflictSummary() {
+  const records = await allRecords();
+  return {
+    generated_at: new Date().toISOString(),
+    conflicts: records.filter((record) => record.sync_status === 'conflict'),
+    needs_correction: records.filter((record) => record.verification_status === 'needs_correction'),
+  };
+}
+
+export async function auditLogs() {
+  return prisma.trAuditLog.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  });
+}
+
+export function toCsv(data: Record<string, unknown>) {
+  const rows = Object.entries(data).map(([key, value]) => {
+    const text = Array.isArray(value) ? value.length.toString() : String(value ?? '');
+    return `${escapeCsv(key)},${escapeCsv(text)}`;
+  });
+  return `field,value\n${rows.join('\n')}\n`;
+}
+
+function escapeCsv(value: string) {
+  const escaped = value.replace(/"/g, '""');
+  return `"${escaped}"`;
 }
