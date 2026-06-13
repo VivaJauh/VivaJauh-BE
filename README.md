@@ -2,6 +2,12 @@
 
 who knows - Technoscape 2026
 
+## Architecture
+
+VivaJauh Backend menggunakan pendekatan Domain Driven Design (DDD) agar business logic koperasi dipisahkan per domain. Setiap modul utama di `src/modules` disusun dengan lapisan domain, application, infrastructure, dan presentation.
+
+Pola ini dipakai untuk menjaga batas tanggung jawab fitur seperti auth, sync offline, tenant/koperasi, dana koperasi, pengajuan pinjaman, report, dan verification.
+
 ## Getting started
 
 1. Install dependencies:
