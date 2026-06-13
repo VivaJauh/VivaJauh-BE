@@ -59,4 +59,5 @@ Swagger documentation at `/docs`.
 
 ## Documentation
 
+- [Project Drive](https://drive.google.com/drive/folders/1Vb6O0SQcC0dWbQb7LDRBHbaWPV7EpNkP?usp=sharing) - aplikasi, ERD, PPT, dan dokumen pendukung.
 - [Backend ERD](https://drive.google.com/file/d/1CkiNKOCuk2zFM0qHUPQN46KPBZhrGoxo/view?usp=sharing)

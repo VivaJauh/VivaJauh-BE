@@ -291,6 +291,11 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
 
     async approveApplicationController(req: Request, res: Response, next: NextFunction) {
       try {
+        const user = req.user;
+        if (!user) {
+          fail(res, 'Unauthorized', 401, 'UNAUTHORIZED');
+          return;
+        }
         const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
         const existing = await loanUseCases.getApplication(id);
         if (!existing) {
@@ -304,7 +309,7 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
         const reviewNote = typeof req.body?.review_note === 'string' ? req.body.review_note : null;
         const app = await loanUseCases.approveApplication(
           id,
-          req.user.sub,
+          user.sub,
           reviewNote,
         );
         if (!app) {
@@ -401,6 +406,11 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
 
     async rejectApplicationController(req: Request, res: Response, next: NextFunction) {
       try {
+        const user = req.user;
+        if (!user) {
+          fail(res, 'Unauthorized', 401, 'UNAUTHORIZED');
+          return;
+        }
         const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
         const existing = await loanUseCases.getApplication(id);
         if (!existing) {
@@ -414,7 +424,7 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
         const reviewNote = typeof req.body?.review_note === 'string' ? req.body.review_note : null;
         const app = await loanUseCases.rejectApplication(
           id,
-          req.user.sub,
+          user.sub,
           reviewNote,
         );
         if (!app) {
