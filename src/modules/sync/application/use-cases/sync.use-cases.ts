@@ -12,6 +12,7 @@ const VALID_RECORD_TYPES = [
   'loan_application',
   'seller_credit',
   'daily_report',
+  'correction',
   'loan_history',
 ] as const;
 
