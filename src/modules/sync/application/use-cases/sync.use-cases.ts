@@ -93,8 +93,9 @@ export function createSyncUseCases(repository: SyncRepository) {
       };
     },
 
-    async syncItems() {
-      return allRecords();
+    async syncItems(user: JwtUser) {
+      const records = await repository.findRecordsByUser(user.sub);
+      return records.map(toApiRecord);
     },
   };
 }

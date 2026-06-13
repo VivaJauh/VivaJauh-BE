@@ -161,4 +161,13 @@ export const prismaSyncRepository: SyncRepository = {
 
     return records.map(mapSyncRecord);
   },
+
+  async findRecordsByUser(userId) {
+    const records = await prisma.trSyncRecord.findMany({
+      where: { userId },
+      orderBy: { uploadedAt: 'asc' },
+    });
+
+    return records.map(mapSyncRecord);
+  },
 };
