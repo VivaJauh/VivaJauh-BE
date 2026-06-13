@@ -1,4 +1,5 @@
 # VivaJauh
+
 who knows - Technoscape 2026
 
 ## Getting started
@@ -52,4 +53,4 @@ Swagger documentation at `/docs`.
 
 ## Documentation
 
-- [Backend ERD](docs/erd.md)
+- [Backend ERD](https://drive.google.com/file/d/1CkiNKOCuk2zFM0qHUPQN46KPBZhrGoxo/view?usp=sharing)
