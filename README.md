@@ -49,3 +49,7 @@ npm run dev
 ```
 
 Swagger documentation at `/docs`.
+
+## Documentation
+
+- [Backend ERD](docs/erd.md)
