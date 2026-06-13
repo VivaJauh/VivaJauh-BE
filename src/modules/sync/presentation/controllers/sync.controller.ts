@@ -24,9 +24,9 @@ export function createSyncControllers(syncUseCases: SyncUseCases) {
       }
     },
 
-    async syncItemsController(_req: Request, res: Response, next: NextFunction) {
+    async syncItemsController(req: Request, res: Response, next: NextFunction) {
       try {
-        ok(res, await syncUseCases.syncItems());
+        ok(res, await syncUseCases.syncItems(req.user!));
       } catch (error) {
         next(error);
       }

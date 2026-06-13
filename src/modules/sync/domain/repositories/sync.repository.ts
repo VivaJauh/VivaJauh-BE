@@ -26,4 +26,5 @@ export type SyncRepository = {
   projectRecord(record: SyncRecord): Promise<void>;
   createSyncAuditLog(input: { userId: string; recordId: string; recordType: string }): Promise<void>;
   findAllRecords(): Promise<SyncRecord[]>;
+  findRecordsByUser(userId: string): Promise<SyncRecord[]>;
 };
