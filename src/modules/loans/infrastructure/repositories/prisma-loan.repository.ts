@@ -108,18 +108,25 @@ export const prismaLoanRepository: LoanRepository = {
   },
 
   async findBorrowerHistories(applicantName: string, applicantMemberId: string | null, since: Date): Promise<LoanHistory[]> {
-    const records = await prisma.trSyncRecord.findMany({
-      where: {
-        recordType: 'loan_history',
-        recordedAt: { gte: since },
-      },
-      orderBy: { recordedAt: 'desc' },
-    });
-
     const normalize = (v: unknown) =>
       typeof v === 'string' ? v.trim().toLowerCase().replace(/\s+/g, ' ') : '';
     const targetName = normalize(applicantName);
     const targetMemberId = normalize(applicantMemberId);
+
+    const [records, repayments] = await Promise.all([
+      prisma.trSyncRecord.findMany({
+        where: {
+          recordType: 'loan_history',
+          recordedAt: { gte: since },
+        },
+        orderBy: { recordedAt: 'desc' },
+      }),
+      prisma.trLoanRepayment.findMany({
+        where: { recordedAt: { gte: since } },
+        orderBy: { recordedAt: 'desc' },
+        include: { user: { include: { tenant: true } } },
+      }),
+    ]);
 
     const withPayload = records.map((r) => ({
       payload: (r.payloadJson ?? {}) as Record<string, unknown>,
@@ -135,7 +142,7 @@ export const prismaLoanRepository: LoanRepository = {
         ? byMemberId
         : withPayload.filter(({ payload }) => normalize(payload.member_name) === targetName);
 
-    return matched.map(({ payload: p, recordedAt }) => ({
+    const legacyHistories = matched.map(({ payload: p, recordedAt }) => ({
       koperasi: typeof p.koperasi === 'string' ? p.koperasi : '',
       loanRef: typeof p.loan_ref === 'string' ? p.loan_ref : null,
       status: typeof p.status === 'string' ? p.status : 'unknown',
@@ -144,6 +151,38 @@ export const prismaLoanRepository: LoanRepository = {
       outstandingArrears: typeof p.outstanding_arrears === 'number' ? p.outstanding_arrears : 0,
       recordedAt,
     }));
+
+    const matchedRepayments = targetMemberId
+      ? repayments.filter((row) => normalize(row.memberId) === targetMemberId)
+      : repayments.filter((row) => normalize(row.memberName) === targetName);
+
+    const repaymentGroups = new Map<string, LoanHistory>();
+    for (const row of matchedRepayments) {
+      const koperasi = row.user.tenant?.koperasiName ?? 'Koperasi tidak diketahui';
+      const loanRef = row.loanRef ?? null;
+      const key = `${koperasi}|${loanRef ?? ''}`;
+      const current = repaymentGroups.get(key);
+
+      if (!current) {
+        repaymentGroups.set(key, {
+          koperasi,
+          loanRef,
+          status: 'good_history',
+          totalRepaid: row.amount,
+          latePayments: 0,
+          outstandingArrears: 0,
+          recordedAt: row.recordedAt,
+        });
+        continue;
+      }
+
+      current.totalRepaid += row.amount;
+      if (row.recordedAt > current.recordedAt) current.recordedAt = row.recordedAt;
+    }
+
+    return [...legacyHistories, ...repaymentGroups.values()].sort(
+      (a, b) => b.recordedAt.getTime() - a.recordedAt.getTime(),
+    );
   },
 
   async saveLoanRecommendation(input: SaveLoanRecommendationInput): Promise<LoanRecommendation> {
