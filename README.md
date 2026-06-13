@@ -1,6 +1,10 @@
 # VivaJauh
 
-who knows - Technoscape 2026
+Created by who knows
+- Calvin Wu (Team Lead)
+- Andrian Pratama (Fullstack Developer)
+- Michella Arlene Wijaya Radika (Domain Expert)
+- Jeremy Auriel Zhang (Backend Developer & UI/UX)
 
 ## Architecture
 
