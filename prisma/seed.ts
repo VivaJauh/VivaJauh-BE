@@ -470,6 +470,40 @@ async function main() {
     }
   }
 
+  const demoApplications = [
+    {
+      applicantName: 'Pak Hendra',
+      applicantMemberId: 'Hendra-001',
+      targetKoperasi: 'Melati Jaya',
+      requestedAmount: 2_500_000,
+      purpose: 'Tambahan modal pakan ternak',
+      tenureMonths: 12,
+      submittedBy: hendra.id,
+    },
+    {
+      applicantName: 'Bu Sari',
+      applicantMemberId: 'Sari-001',
+      targetKoperasi: 'Harapan Baru',
+      requestedAmount: 1_200_000,
+      purpose: 'Pembelian bibit kambing',
+      tenureMonths: 6,
+      submittedBy: hendra.id,
+    },
+  ];
+
+  for (const app of demoApplications) {
+    const exists = await prisma.trLoanApplication.findFirst({
+      where: {
+        applicantName: app.applicantName,
+        targetKoperasi: app.targetKoperasi,
+        status: 'pending_review',
+      },
+    });
+    if (!exists) {
+      await prisma.trLoanApplication.create({ data: app });
+    }
+  }
+
   console.log('Seeded demo users. Password: password123');
   console.log('  member: pak_hendra / pak.hendra@example.com');
   console.log('  primary_admin: primary_harapanbaru / primary.harapanbaru@example.com');
@@ -478,6 +512,7 @@ async function main() {
   console.log('Seeded members: bu_sari, pak_joko (Harapan Baru), pak_acep (Padiwangi), bu_rina (Tirta Bersama).');
   console.log('Seeded dana pokok and monthly iuran ledgers for current period:', periodKey);
   console.log('Seeded member activity records for tenant summaries.');
+  console.log('Seeded demo loan applications (pending review): Pak Hendra, Bu Sari.');
 }
 
 main()
