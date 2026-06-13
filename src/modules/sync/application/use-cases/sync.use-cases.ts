@@ -9,6 +9,7 @@ const VALID_RECORD_TYPES = [
   'livestock_event',
   'savings_transaction',
   'loan_repayment',
+  'loan_application',
   'seller_credit',
   'daily_report',
   'loan_history',
@@ -205,6 +206,29 @@ function validateLoanHistoryPayload(payload: Record<string, unknown>) {
   return null;
 }
 
+function validateLoanApplicationPayload(payload: Record<string, unknown>) {
+  const applicantName = normalizeText(payload.applicant_name) || normalizeText(payload.primary);
+  const targetKoperasi = normalizeText(payload.target_koperasi) || normalizeText(payload.secondary);
+  const requestedAmount = parsePositiveNumber(payload.requested_amount) ?? parsePositiveNumber(payload.quantity);
+  const tenureMonths = parsePositiveInteger(payload.tenure_months);
+
+  if (!applicantName) return 'MISSING_APPLICANT_NAME';
+  if (!targetKoperasi) return 'MISSING_TARGET_KOPERASI';
+  if (requestedAmount === null) return 'INVALID_REQUESTED_AMOUNT';
+  if (tenureMonths === null) return 'INVALID_TENURE_MONTHS';
+
+  payload.applicant_name = applicantName;
+  payload.primary = applicantName;
+  normalizeOptionalText(payload, 'applicant_member_id');
+  payload.target_koperasi = targetKoperasi;
+  payload.secondary = targetKoperasi;
+  payload.requested_amount = requestedAmount;
+  payload.quantity = requestedAmount;
+  payload.tenure_months = tenureMonths;
+  normalizeOptionalText(payload, 'purpose');
+  return null;
+}
+
 function validatePayload(recordType: ValidRecordType, payload: Record<string, unknown>) {
   if (
     recordType === 'feed_transaction'
@@ -216,6 +240,7 @@ function validatePayload(recordType: ValidRecordType, payload: Record<string, un
     return validateProjectedPayload(recordType, payload);
   }
 
+  if (recordType === 'loan_application') return validateLoanApplicationPayload(payload);
   if (recordType === 'loan_history') return validateLoanHistoryPayload(payload);
 
   return null;

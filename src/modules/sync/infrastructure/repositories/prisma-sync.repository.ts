@@ -19,6 +19,11 @@ function payloadNumber(payload: Record<string, unknown>, key: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function payloadInteger(payload: Record<string, unknown>, key: string) {
+  const parsed = payloadNumber(payload, key);
+  return Number.isInteger(parsed) ? parsed : Math.trunc(parsed);
+}
+
 export const prismaSyncRepository: SyncRepository = {
   async findDeviceById(id) {
     const device = await prisma.msDevice.findFirst({ where: { id } });
@@ -129,6 +134,43 @@ export const prismaSyncRepository: SyncRepository = {
           },
         });
         break;
+      case 'loan_application': {
+        const applicantName = payloadText(payload, 'applicant_name') ?? primary;
+        const targetKoperasi = payloadText(payload, 'target_koperasi') ?? payloadText(payload, 'secondary') ?? '-';
+        const requestedAmount = payloadNumber(payload, 'requested_amount') || quantity;
+        const purpose = payloadText(payload, 'purpose') ?? payloadText(payload, 'note');
+        const app = await prisma.trLoanApplication.create({
+          data: {
+            applicantName,
+            applicantMemberId: payloadText(payload, 'applicant_member_id'),
+            targetKoperasi,
+            requestedAmount,
+            purpose,
+            tenureMonths: payloadInteger(payload, 'tenure_months'),
+            submittedBy: record.userId,
+            createdAt: record.recordedAt,
+          },
+        });
+
+        await prisma.trAuditLog.create({
+          data: {
+            userId: record.userId,
+            action: 'loan_application_created',
+            targetType: 'LoanApplication',
+            targetId: app.id,
+            resultStatus: 'pending_review',
+            metadataJson: {
+              applicant_name: app.applicantName,
+              applicant_member_id: app.applicantMemberId ?? null,
+              target_koperasi: app.targetKoperasi,
+              requested_amount: app.requestedAmount,
+              new_status: 'pending_review',
+              source_record_id: record.id,
+            },
+          },
+        });
+        break;
+      }
       case 'seller_credit':
         await prisma.trSellerCredit.upsert({
           where: { recordId: record.id },
