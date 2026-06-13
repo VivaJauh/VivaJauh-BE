@@ -19,6 +19,25 @@ import type {
 
 const FAST_DECISION_THRESHOLD_MS = 30 * 60 * 1000;
 const RECAP_PERIOD_MONTHS = 12;
+const VALID_LOAN_STATUSES = new Set<LoanStatus>(['draft', 'pending_review', 'approved', 'rejected']);
+
+function parsePositiveNumber(value: unknown) {
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parsePositiveInteger(value: unknown) {
+  const parsed = parsePositiveNumber(value);
+  return parsed !== null && Number.isInteger(parsed) ? parsed : null;
+}
+
+function validateLoanStatus(status: LoanStatus | undefined) {
+  if (status !== undefined && !VALID_LOAN_STATUSES.has(status)) {
+    throw new Error('INVALID_INPUT: status must be draft, pending_review, approved, or rejected');
+  }
+}
 
 function getRecapStartDate(now = new Date()) {
   const start = new Date(now);
@@ -156,13 +175,13 @@ export function createLoanUseCases(repository: LoanRepository, gemini: GeminiLoa
     async createApplication(input: CreateLoanApplicationInput) {
       const name = typeof input.applicantName === 'string' ? input.applicantName.trim() : '';
       const targetKoperasi = typeof input.targetKoperasi === 'string' ? input.targetKoperasi.trim() : '';
-      const requestedAmount = Number(input.requestedAmount);
-      const tenureMonths = Number(input.tenureMonths);
+      const requestedAmount = parsePositiveNumber(input.requestedAmount);
+      const tenureMonths = parsePositiveInteger(input.tenureMonths);
 
       if (!name) throw new Error('INVALID_INPUT: applicant_name is required');
       if (!targetKoperasi) throw new Error('INVALID_INPUT: target_koperasi is required');
-      if (!requestedAmount || requestedAmount <= 0) throw new Error('INVALID_INPUT: requested_amount must be a positive number');
-      if (!tenureMonths || tenureMonths <= 0) throw new Error('INVALID_INPUT: tenure_months must be a positive number');
+      if (requestedAmount === null) throw new Error('INVALID_INPUT: requested_amount must be a finite positive number');
+      if (tenureMonths === null) throw new Error('INVALID_INPUT: tenure_months must be a positive integer');
 
       const app = await repository.createLoanApplication({
         applicantName: name,
@@ -281,6 +300,7 @@ export function createLoanUseCases(repository: LoanRepository, gemini: GeminiLoa
     },
 
     async listApplications(status?: LoanStatus) {
+      validateLoanStatus(status);
       return repository.findLoanApplications(status);
     },
 

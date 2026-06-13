@@ -6,9 +6,12 @@ import type { ReportRepository } from '../../domain/repositories/report.reposito
 function numberFromPayload(payload: JsonValue, key: string) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return 0;
   const value = (payload as Record<string, unknown>)[key];
-  if (typeof value === 'number') return value;
-  if (typeof value === 'string') return Number(value) || 0;
-  return 0;
+  const parsed = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && value.trim() !== ''
+      ? Number(value)
+      : 0;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
 function countByType(records: SyncedRecord[]) {

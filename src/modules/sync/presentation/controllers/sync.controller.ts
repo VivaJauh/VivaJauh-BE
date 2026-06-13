@@ -1,14 +1,16 @@
 import type { NextFunction, Request, Response } from 'express';
-import { ok } from '../../../../shared/presentation/http/response';
-import type { IncomingSyncItem } from '../../application/dto/incoming-sync-item';
+import { fail, ok } from '../../../../shared/presentation/http/response';
 import type { SyncUseCases } from '../../application/use-cases/sync.use-cases';
 
 export function createSyncControllers(syncUseCases: SyncUseCases) {
   return {
     async syncBatchController(req: Request, res: Response, next: NextFunction) {
       try {
-        const items: IncomingSyncItem[] = Array.isArray(req.body?.items) ? req.body.items : [];
-        ok(res, { results: await syncUseCases.syncBatch(req.user!, items) });
+        if (!Array.isArray(req.body?.items)) {
+          fail(res, 'items must be an array', 400, 'BAD_REQUEST');
+          return;
+        }
+        ok(res, { results: await syncUseCases.syncBatch(req.user!, req.body.items) });
       } catch (error) {
         next(error);
       }

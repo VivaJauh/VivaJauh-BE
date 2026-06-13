@@ -34,6 +34,10 @@ export function createVerificationControllers(verificationUseCases: Verification
 
         ok(res, record);
       } catch (error) {
+        if (error instanceof Error && error.message.startsWith('INVALID_INPUT:')) {
+          fail(res, error.message.replace('INVALID_INPUT: ', ''), 400, 'BAD_REQUEST');
+          return;
+        }
         next(error);
       }
     },

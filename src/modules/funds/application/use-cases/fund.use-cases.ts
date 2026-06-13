@@ -87,10 +87,17 @@ function validatePeriodKey(value: unknown, fundType: FundType) {
   if (fundType === 'principal') return 'principal';
   if (typeof value !== 'string' || value.trim() === '') return currentPeriod();
   const periodKey = value.trim();
-  if (!/^\d{4}-\d{2}$/.test(periodKey)) {
-    throw new Error('INVALID_INPUT: period_key must use YYYY-MM format');
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(periodKey)) {
+    throw new Error('INVALID_INPUT: period_key must use YYYY-MM format with month 01-12');
   }
   return periodKey;
+}
+
+function parsePositiveNumber(value: unknown) {
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
 async function membersForScope(repository: FundRepository, user: JwtUser): Promise<{ scope: FundScope; members: FundMember[] }> {
@@ -156,8 +163,8 @@ export function createFundUseCases(repository: FundRepository) {
 
       const fundType = validateFundType(input.fundType);
       const periodKey = validatePeriodKey(input.periodKey, fundType);
-      const amount = Number(input.amount);
-      if (!amount || amount <= 0) throw new Error('INVALID_INPUT: amount must be a positive number');
+      const amount = parsePositiveNumber(input.amount);
+      if (amount === null) throw new Error('INVALID_INPUT: amount must be a finite positive number');
 
       const member = await repository.findMemberById(memberId);
       if (!member || member.role !== 'member') {

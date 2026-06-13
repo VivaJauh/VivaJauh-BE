@@ -11,9 +11,12 @@ function payloadText(payload: Record<string, unknown>, key: string) {
 
 function payloadNumber(payload: Record<string, unknown>, key: string) {
   const value = payload[key];
-  if (typeof value === 'number') return value;
-  if (typeof value === 'string') return Number(value) || 0;
-  return 0;
+  const parsed = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && value.trim() !== ''
+      ? Number(value)
+      : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 export const prismaSyncRepository: SyncRepository = {

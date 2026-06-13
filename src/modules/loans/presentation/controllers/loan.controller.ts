@@ -19,6 +19,8 @@ const FLAG_LABELS: Record<string, string> = {
   MISSING_REVIEW_NOTE: 'Catatan keputusan kosong',
 };
 
+const VALID_LOAN_STATUSES = new Set<LoanStatus>(['draft', 'pending_review', 'approved', 'rejected']);
+
 function maskMemberId(value: string | null): string {
   if (!value) return '-';
   if (value.length <= 4) return `${value[0]}***`;
@@ -162,6 +164,34 @@ function isAdmin(req: Request): boolean {
   return req.user?.role === 'secondary_admin';
 }
 
+function parseLoanStatus(value: unknown): LoanStatus | undefined {
+  if (value === undefined) return undefined;
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw !== 'string' || raw.trim() === '') return undefined;
+  const status = raw.trim() as LoanStatus;
+  if (!VALID_LOAN_STATUSES.has(status)) {
+    throw new Error('INVALID_INPUT: status must be draft, pending_review, approved, or rejected');
+  }
+  return status;
+}
+
+function parseOptionalDate(value: unknown, field: string): Date | undefined {
+  if (value === undefined) return undefined;
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw !== 'string' || raw.trim() === '') return undefined;
+  const date = new Date(raw.trim());
+  if (!Number.isFinite(date.getTime())) {
+    throw new Error(`INVALID_INPUT: ${field} must be a valid date-time`);
+  }
+  return date;
+}
+
+function validateDateRange(from?: Date, to?: Date) {
+  if (from && to && from > to) {
+    throw new Error('INVALID_INPUT: from must be before or equal to to');
+  }
+}
+
 export function createLoanControllers(loanUseCases: LoanUseCases) {
   return {
     async createApplicationController(req: Request, res: Response, next: NextFunction) {
@@ -215,10 +245,14 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
 
     async listApplicationsController(req: Request, res: Response, next: NextFunction) {
       try {
-        const status = req.query?.status as LoanStatus | undefined;
+        const status = parseLoanStatus(req.query?.status);
         const apps = await loanUseCases.listApplications(status);
         ok(res, apps.map((app) => toApiApplication(app, !isAdmin(req))));
       } catch (error) {
+        if (error instanceof Error && error.message.startsWith('INVALID_INPUT:')) {
+          fail(res, error.message.replace('INVALID_INPUT: ', ''), 400, 'BAD_REQUEST');
+          return;
+        }
         next(error);
       }
     },
@@ -257,8 +291,9 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
           return;
         }
         const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-        const from = req.query?.from ? new Date(req.query.from as string) : undefined;
-        const to = req.query?.to ? new Date(req.query.to as string) : undefined;
+        const from = parseOptionalDate(req.query?.from, 'from');
+        const to = parseOptionalDate(req.query?.to, 'to');
+        validateDateRange(from, to);
         const result = await loanUseCases.getLoanHistory(id, from, to);
         if (!result) {
           fail(res, 'Loan application not found', 404, 'NOT_FOUND');
@@ -266,6 +301,10 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
         }
         ok(res, result);
       } catch (error) {
+        if (error instanceof Error && error.message.startsWith('INVALID_INPUT:')) {
+          fail(res, error.message.replace('INVALID_INPUT: ', ''), 400, 'BAD_REQUEST');
+          return;
+        }
         next(error);
       }
     },
@@ -295,8 +334,9 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
           return;
         }
         const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-        const from = req.query?.from ? new Date(req.query.from as string) : undefined;
-        const to = req.query?.to ? new Date(req.query.to as string) : undefined;
+        const from = parseOptionalDate(req.query?.from, 'from');
+        const to = parseOptionalDate(req.query?.to, 'to');
+        validateDateRange(from, to);
         const report = await loanUseCases.exportHistoryReport(
           id,
           { id: req.user.sub, name: req.user.name },
@@ -314,6 +354,10 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
         );
         renderAuditReportPdf(res, report);
       } catch (error) {
+        if (error instanceof Error && error.message.startsWith('INVALID_INPUT:')) {
+          fail(res, error.message.replace('INVALID_INPUT: ', ''), 400, 'BAD_REQUEST');
+          return;
+        }
         next(error);
       }
     },
