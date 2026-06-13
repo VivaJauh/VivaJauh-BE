@@ -19,7 +19,6 @@ import type {
 
 const FAST_DECISION_THRESHOLD_MS = 30 * 60 * 1000;
 const RECAP_PERIOD_MONTHS = 12;
-const VALID_LOAN_STATUSES = new Set<LoanStatus>(['draft', 'pending_review', 'approved', 'rejected']);
 
 function parsePositiveNumber(value: unknown) {
   if (typeof value !== 'number' && typeof value !== 'string') return null;
@@ -31,12 +30,6 @@ function parsePositiveNumber(value: unknown) {
 function parsePositiveInteger(value: unknown) {
   const parsed = parsePositiveNumber(value);
   return parsed !== null && Number.isInteger(parsed) ? parsed : null;
-}
-
-function validateLoanStatus(status: LoanStatus | undefined) {
-  if (status !== undefined && !VALID_LOAN_STATUSES.has(status)) {
-    throw new Error('INVALID_INPUT: status must be draft, pending_review, approved, or rejected');
-  }
 }
 
 function getRecapStartDate(now = new Date()) {
@@ -300,7 +293,6 @@ export function createLoanUseCases(repository: LoanRepository, gemini: GeminiLoa
     },
 
     async listApplications(status?: LoanStatus) {
-      validateLoanStatus(status);
       return repository.findLoanApplications(status);
     },
 
