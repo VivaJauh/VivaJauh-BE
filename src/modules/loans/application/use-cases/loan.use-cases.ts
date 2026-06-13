@@ -292,8 +292,25 @@ export function createLoanUseCases(repository: LoanRepository, gemini: GeminiLoa
       return repository.findLoanApplicationById(id);
     },
 
-    async listApplications(status?: LoanStatus) {
-      return repository.findLoanApplications(status);
+    async listApplications(filters?: {
+      status?: LoanStatus;
+      submittedBy?: string;
+      approvalRole?: 'primary_admin' | 'secondary_admin';
+      actorTenantId?: string | null;
+    }) {
+      const applications = await repository.findLoanApplications({
+        status: filters?.status,
+        submittedBy: filters?.submittedBy,
+      });
+      return applications.filter((app) => {
+        if (filters?.approvalRole && app.approvalRole !== filters.approvalRole) {
+          return false;
+        }
+        if (filters?.approvalRole === 'primary_admin') {
+          return Boolean(filters.actorTenantId) && app.submitterTenantId === filters.actorTenantId;
+        }
+        return true;
+      });
     },
 
     async approveApplication(

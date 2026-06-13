@@ -150,7 +150,9 @@ function toApiApplication(
     purpose: app.purpose,
     tenure_months: app.tenureMonths,
     status: app.status,
+    approval_role: app.approvalRole,
     submitted_by: app.submittedBy,
+    submitter_koperasi_name: app.submitterKoperasiName,
     reviewed_by: app.reviewedBy,
     reviewed_at: app.reviewedAt,
     review_note: app.reviewNote,
@@ -161,6 +163,24 @@ function toApiApplication(
 }
 
 function isAdmin(req: Request): boolean {
+  return req.user?.role === 'secondary_admin';
+}
+
+function canViewApplication(
+  req: Request,
+  app: NonNullable<Awaited<ReturnType<LoanUseCases['getApplication']>>>,
+): boolean {
+  if (req.user?.role !== 'member') return true;
+  return app.submittedBy === req.user.sub;
+}
+
+function canDecideApplication(
+  req: Request,
+  app: NonNullable<Awaited<ReturnType<LoanUseCases['getApplication']>>>,
+): boolean {
+  if (app.approvalRole === 'primary_admin') {
+    return req.user?.role === 'primary_admin' && req.user.tenant_id === app.submitterTenantId;
+  }
   return req.user?.role === 'secondary_admin';
 }
 
@@ -218,6 +238,11 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
     async generateRecommendationController(req: Request, res: Response, next: NextFunction) {
       try {
         const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+        const app = await loanUseCases.getApplication(id);
+        if (!app || !canViewApplication(req, app)) {
+          fail(res, 'Loan application not found', 404, 'NOT_FOUND');
+          return;
+        }
         const result = await loanUseCases.generateRecommendation(id, req.user!.sub);
         if (!result) {
           fail(res, 'Loan application not found', 404, 'NOT_FOUND');
@@ -233,7 +258,7 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
       try {
         const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
         const app = await loanUseCases.getApplication(id);
-        if (!app) {
+        if (!app || !canViewApplication(req, app)) {
           fail(res, 'Loan application not found', 404, 'NOT_FOUND');
           return;
         }
@@ -246,7 +271,14 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
     async listApplicationsController(req: Request, res: Response, next: NextFunction) {
       try {
         const status = parseLoanStatus(req.query?.status);
-        const apps = await loanUseCases.listApplications(status);
+        const apps = await loanUseCases.listApplications({
+          status,
+          submittedBy: req.user?.role === 'member' ? req.user.sub : undefined,
+          approvalRole: req.user?.role === 'primary_admin' || req.user?.role === 'secondary_admin'
+            ? req.user.role
+            : undefined,
+          actorTenantId: req.user?.tenant_id,
+        });
         ok(res, apps.map((app) => toApiApplication(app, !isAdmin(req))));
       } catch (error) {
         if (error instanceof Error && error.message.startsWith('INVALID_INPUT:')) {
@@ -259,11 +291,16 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
 
     async approveApplicationController(req: Request, res: Response, next: NextFunction) {
       try {
-        if (req.user?.role !== 'secondary_admin') {
+        const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+        const existing = await loanUseCases.getApplication(id);
+        if (!existing) {
+          fail(res, 'Loan application not found', 404, 'NOT_FOUND');
+          return;
+        }
+        if (!canDecideApplication(req, existing)) {
           fail(res, 'Forbidden', 403, 'FORBIDDEN');
           return;
         }
-        const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
         const reviewNote = typeof req.body?.review_note === 'string' ? req.body.review_note : null;
         const app = await loanUseCases.approveApplication(
           id,
@@ -364,11 +401,16 @@ export function createLoanControllers(loanUseCases: LoanUseCases) {
 
     async rejectApplicationController(req: Request, res: Response, next: NextFunction) {
       try {
-        if (req.user?.role !== 'secondary_admin') {
+        const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+        const existing = await loanUseCases.getApplication(id);
+        if (!existing) {
+          fail(res, 'Loan application not found', 404, 'NOT_FOUND');
+          return;
+        }
+        if (!canDecideApplication(req, existing)) {
           fail(res, 'Forbidden', 403, 'FORBIDDEN');
           return;
         }
-        const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
         const reviewNote = typeof req.body?.review_note === 'string' ? req.body.review_note : null;
         const app = await loanUseCases.rejectApplication(
           id,

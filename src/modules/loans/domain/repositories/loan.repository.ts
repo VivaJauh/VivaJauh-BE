@@ -26,7 +26,7 @@ export type SaveLoanRecommendationInput = {
 export type LoanRepository = {
   createLoanApplication(input: CreateLoanApplicationRepositoryInput): Promise<LoanApplication>;
   findLoanApplicationById(id: string): Promise<LoanApplication | null>;
-  findLoanApplications(status?: LoanStatus): Promise<LoanApplication[]>;
+  findLoanApplications(filters?: { status?: LoanStatus; submittedBy?: string }): Promise<LoanApplication[]>;
   findBorrowerHistories(applicantName: string, applicantMemberId: string | null, since: Date): Promise<LoanHistory[]>;
   saveLoanRecommendation(input: SaveLoanRecommendationInput): Promise<LoanRecommendation>;
   updateLoanDecision(input: { id: string; status: 'approved' | 'rejected'; reviewedBy: string; reviewNote: string | null; reviewedAt: Date }): Promise<LoanApplication | null>;

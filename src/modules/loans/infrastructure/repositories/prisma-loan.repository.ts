@@ -30,9 +30,19 @@ function computeAuditHash(input: {
     .digest('hex');
 }
 
-type RawApplication = Awaited<ReturnType<typeof prisma.trLoanApplication.findFirst>> & {
-  recommendation: Awaited<ReturnType<typeof prisma.trLoanRecommendation.findFirst>> | null;
-};
+const includeApplicationRelations = {
+  recommendation: true,
+  submitter: {
+    select: {
+      tenantId: true,
+      tenant: { select: { koperasiName: true } },
+    },
+  },
+} as const;
+
+type RawApplication = Prisma.TrLoanApplicationGetPayload<{
+  include: typeof includeApplicationRelations;
+}>;
 
 function toRecommendation(r: Awaited<ReturnType<typeof prisma.trLoanRecommendation.findFirst>>): LoanRecommendation | null {
   if (!r) return null;
@@ -52,6 +62,11 @@ function toRecommendation(r: Awaited<ReturnType<typeof prisma.trLoanRecommendati
 }
 
 function toApplication(raw: NonNullable<RawApplication>): LoanApplication {
+  const submitterKoperasiName = raw.submitter.tenant?.koperasiName ?? null;
+  const sameKoperasi =
+    normalizeKoperasi(raw.targetKoperasi) !== '' &&
+    normalizeKoperasi(raw.targetKoperasi) === normalizeKoperasi(submitterKoperasiName);
+
   return {
     id: raw.id,
     applicantName: raw.applicantName,
@@ -61,7 +76,10 @@ function toApplication(raw: NonNullable<RawApplication>): LoanApplication {
     purpose: raw.purpose,
     tenureMonths: raw.tenureMonths,
     status: raw.status as LoanStatus,
+    approvalRole: sameKoperasi ? 'primary_admin' : 'secondary_admin',
     submittedBy: raw.submittedBy,
+    submitterTenantId: raw.submitter.tenantId,
+    submitterKoperasiName,
     reviewedBy: raw.reviewedBy,
     reviewedAt: raw.reviewedAt,
     reviewNote: raw.reviewNote,
@@ -71,7 +89,11 @@ function toApplication(raw: NonNullable<RawApplication>): LoanApplication {
   };
 }
 
-const includeRecommendation = { recommendation: true } as const;
+function normalizeKoperasi(value: unknown): string {
+  return typeof value === 'string'
+    ? value.trim().toLowerCase().replace(/\s+/g, ' ')
+    : '';
+}
 
 export const prismaLoanRepository: LoanRepository = {
   async createLoanApplication(input: CreateLoanApplicationRepositoryInput): Promise<LoanApplication> {
@@ -85,7 +107,7 @@ export const prismaLoanRepository: LoanRepository = {
         tenureMonths: input.tenureMonths,
         submittedBy: input.submittedBy,
       },
-      include: includeRecommendation,
+      include: includeApplicationRelations,
     });
     return toApplication(raw);
   },
@@ -93,16 +115,19 @@ export const prismaLoanRepository: LoanRepository = {
   async findLoanApplicationById(id: string): Promise<LoanApplication | null> {
     const raw = await prisma.trLoanApplication.findFirst({
       where: { id },
-      include: includeRecommendation,
+      include: includeApplicationRelations,
     });
     return raw ? toApplication(raw) : null;
   },
 
-  async findLoanApplications(status?: LoanStatus): Promise<LoanApplication[]> {
+  async findLoanApplications(filters: { status?: LoanStatus; submittedBy?: string } = {}): Promise<LoanApplication[]> {
     const raw = await prisma.trLoanApplication.findMany({
-      where: status ? { status } : undefined,
+      where: {
+        ...(filters.status ? { status: filters.status } : {}),
+        ...(filters.submittedBy ? { submittedBy: filters.submittedBy } : {}),
+      },
       orderBy: { createdAt: 'desc' },
-      include: includeRecommendation,
+      include: includeApplicationRelations,
     });
     return raw.map(toApplication);
   },
@@ -224,7 +249,7 @@ export const prismaLoanRepository: LoanRepository = {
         reviewedAt: input.reviewedAt,
         reviewNote: input.reviewNote,
       },
-      include: includeRecommendation,
+      include: includeApplicationRelations,
     });
     return toApplication(raw);
   },

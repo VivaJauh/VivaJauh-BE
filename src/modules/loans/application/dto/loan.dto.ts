@@ -3,6 +3,7 @@ import type { JsonValue } from '../../../../shared/domain/json';
 export type LoanStatus = 'draft' | 'pending_review' | 'approved' | 'rejected';
 export type LoanRiskLevel = 'low' | 'medium' | 'high';
 export type LoanRecommendationLabel = 'approve' | 'manual_review' | 'reject_or_require_clearance';
+export type LoanApprovalRole = 'primary_admin' | 'secondary_admin';
 
 export type CreateLoanApplicationInput = {
   applicantName?: string;
@@ -78,7 +79,10 @@ export type LoanApplication = {
   purpose: string | null;
   tenureMonths: number;
   status: LoanStatus;
+  approvalRole: LoanApprovalRole;
   submittedBy: string;
+  submitterTenantId: string | null;
+  submitterKoperasiName: string | null;
   reviewedBy: string | null;
   reviewedAt: Date | null;
   reviewNote: string | null;
